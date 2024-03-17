@@ -1,150 +1,242 @@
-import base64
+import os
 import json
+import base64
 import logging
-
 import boto3
 import streamlit as st
-from botocore.exceptions import ClientError
+
+from botocore.exceptions import ClientError, NoCredentialsError
+
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.DEBUG)
+logger.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+file_handler = logging.FileHandler('app.log')
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
 
-st.sidebar.title("Building with Bedrock")  # Title of the application
-st.sidebar.subheader("Q&A for the uploaded image")
+def images_process(image_file):
+    image_string = base64.b64encode(image_file.read()).decode('utf8')
+    return image_string
 
-REGION = "us-east-1"
+def image_update():
+    st.session_state.image_update = True
 
+def stream_multi_modal_prompt(bedrock_runtime, model_id, system_message, messages, max_tokens, temperature, top_p, top_k):
+    body = json.dumps({
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": max_tokens,
+        "system":  system_message,
+        "temperature": temperature,
+        "top_p": top_p,
+        "top_k": top_k,
+        "messages": messages
+    })
 
-def save_chat_history_message(history: list):
-    st.session_state['history'] = history
+    response = bedrock_runtime.invoke_model_with_response_stream(body=body, modelId=model_id)
 
+    for event in response.get("body"):
+        chunk = json.loads(event["chunk"]["bytes"])
+        if chunk['type'] == 'content_block_delta':
+            if chunk['delta']['type'] == 'text_delta':
+                yield chunk['delta']['text']
+                # print(chunk['delta']['text'], end="")
+        # if chunk['type'] == 'message_delta':
+        #     print(f"\nStop reason: {chunk['delta']['stop_reason']}")
+        #     print(f"Stop sequence: {chunk['delta']['stop_sequence']}")
+        #     print(f"Output tokens: {chunk['usage']['output_tokens']}")
 
-def has_history():
-    return 'history' in st.session_state
-
-
-def show_chat_history():
-    if 'history' not in st.session_state:
-        return
-    for msg in st.session_state['history']:
-        if 'content' not in msg:
-            continue
-        if type(msg['content']) is list:
-            for item in msg['content']:
-                if item['type'] == "text":
-                    st.chat_message(name=msg['role']).write(item['text'])
-                elif item['type'] == "image":
-                    continue
+def get_bedrock_runtime_client(aws_access_key=None, aws_secret_key=None, aws_region=None):
+    try:
+        if aws_access_key and aws_secret_key and aws_region:
+            bedrock_runtime = boto3.client(
+                'bedrock-runtime',
+                aws_access_key_id=aws_access_key,
+                aws_secret_access_key=aws_secret_key,
+                region_name=aws_region
+            )
         else:
-            st.chat_message(name=msg['role']).write(msg['content'])
-
-
-def get_chat_history():
-    if not has_history():
-        return []
-    return st.session_state['history']
-
-
-def clear_chat_history_message():
-    if 'history' in st.session_state:
-        del st.session_state['history']
-
-
-def run_multi_modal_prompt(bedrock_runtime, model_id, messages, max_tokens):
-    """
-    Invokes a model with a multimodal prompt.
-    Args:
-        bedrock_runtime: The Amazon Bedrock boto3 client.
-        model_id (str): The model ID to use.
-        messages (JSON): The messages to send to the model.
-        max_tokens (int): The maximum  number of tokens to generate.
-    Returns:
-        None.
-    """
-
-    system_input = """
-    You are Claude, an AI assistant created by Anthropic to be helpful,harmless, and honest. 
-    Your goal is to provide informative and substantive responses to queries while avoiding potential harms.
-    You should answer the questions in the same language with user input text.
-    """
-
-    body = json.dumps(
-        {
-            "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": max_tokens,
-            "system": system_input,
-            "messages": messages
-        }
-    )
-
-    response = bedrock_runtime.invoke_model(
-        body=body, modelId=model_id)
-    response_body = json.loads(response.get('body').read())
-
-    return response_body
-
+            bedrock_runtime = boto3.client('bedrock-runtime')
+    except ClientError as e:
+        # Handle errors returned by the AWS service
+        error_code = e.response['Error']['Code']
+        error_message = e.response['Error']['Message']
+        logger.error(f"AWS service returned an error: {error_code} - {error_message}")
+        raise
+    except NoCredentialsError:
+        # Handle the case where credentials are missing
+        logger.error("Unable to retrieve AWS credentials, please check your credentials configuration.")
+        raise
+    except Exception as e:
+        # Handle any other unknown exceptions
+        logger.error(f"An unknown error occurred: {str(e)}")
+        raise
+    return bedrock_runtime
 
 def main():
-    """
-    Entrypoint for Anthropic Claude multimodal prompt example.
-    """
+    # App title
+    st.set_page_config(page_title="Bedrock-Claude-Chat 💬", page_icon='./utils/logo.png')
 
-    try:
+    with st.sidebar:
+        col1, col2 = st.columns([1,3.5])
+        with col1:
+            st.image('./utils/logo.png')
+        with col2:
+            st.title("Bedrock-Claude-Chat")
+        
+        with st.expander('AWS Credentials', expanded=False):
+            aws_access_key = st.text_input('AWS Access Key', os.environ.get('AWS_ACCESS_KEY_ID', ""), type="password")
+            aws_secret_key = st.text_input('AWS Secret Key', os.environ.get('AWS_SECRET_ACCESS_KEY', ""), type="password")
+            aws_region = st.text_input('AWS Region', os.environ.get('AWS_REGION', ""))
 
-        bedrock_runtime = boto3.client(
-            service_name='bedrock-runtime',
-            region_name=REGION,
-        )
+            credentials_changed = (
+                aws_access_key != os.environ.get('AWS_ACCESS_KEY_ID', "") or
+                aws_secret_key != os.environ.get('AWS_SECRET_ACCESS_KEY', "") or
+                aws_region != os.environ.get('AWS_REGION', "")
+            )
 
-        model_id = 'anthropic.claude-3-sonnet-20240229-v1:0'
-        max_tokens = 4096
-        st.sidebar.header("What image would you like to analyst?")
-        uploaded_file = st.sidebar.file_uploader("Upload an image",
-                                                 type=['jpg', 'jpeg', 'png', 'gif', 'webp'],
-                                                 on_change=clear_chat_history_message)
-        content_image = None
-        if uploaded_file:
-            st.sidebar.image(uploaded_file)
-            content_image = base64.b64encode(uploaded_file.read()).decode('utf8')
+            if st.button('Update AWS Credentials', disabled=not credentials_changed):
+                if aws_access_key == "" or aws_secret_key == "" or aws_region == "":
+                    st.warning("Please fill in all the AWS credential fields.")
+                else:
+                    st.success("AWS credentials are updated successfully!")
+                    os.environ['AWS_ACCESS_KEY_ID'] = aws_access_key
+                    os.environ['AWS_SECRET_ACCESS_KEY'] = aws_secret_key
+                    os.environ['AWS_REGION'] = aws_region
 
-        # Read reference image from file and encode as base64 strings.
+        model_id = st.selectbox('Choose a Model', ('Anthropic Claude-V3-Haiku', 'Anthropic Claude-V3-Sonnet', 'Anthropic Claude-V2.1', 'Anthropic Claude-V2', 'Anthropic Claude-Instant-V1.2'), label_visibility="collapsed")
+        model_id = {
+            'Anthropic Claude-V2': 'anthropic.claude-v2',
+            'Anthropic Claude-V2.1': 'anthropic.claude-v2:1',
+            'Anthropic Claude-Instant-V1.2': 'anthropic.claude-instant-v1',
+            'Anthropic Claude-V3-Haiku': 'anthropic.claude-3-haiku-20240307-v1:0',
+            'Anthropic Claude-V3-Sonnet': 'anthropic.claude-3-sonnet-20240229-v1:0',
+        }.get(model_id, model_id)
 
-        input_text = st.chat_input(placeholder="What do you want to know?")
-        if content_image:
-            if input_text:
-                show_chat_history()
-                st.chat_message(name='user').write(input_text)
-                message = {"role": "user",
-                           "content": [
-                               {"type": "text", "text": input_text}
-                           ]}
-                if not has_history():
-                    message["content"].append({"type": "image",
-                                               "source": {"type": "base64",
-                                                          "media_type": "image/jpeg",
-                                                          "data": content_image}})
+        with st.expander('System Prompt', expanded=False):
+            system_prompt = st.text_area(
+                "System prompt", 
+                "You are a helpful, harmless, and honest AI assistant. "
+                "Your goal is to provide informative and substantive responses to queries while avoiding potential harms.", 
+                label_visibility="collapsed"
+            )
 
-                messages = []
+        with st.expander('Model Parameters', expanded=False):
+            max_new_tokens= st.number_input(
+                min_value=10,
+                max_value=4096,
+                step=10,
+                value=1024,
+                label="Number of tokens to generate",
+                key="max_new_token"
+            )
+            col1, col2 = st.columns([4,1])
+            with col1:
+                temperature = st.slider(
+                    min_value=0.1,
+                    max_value=1.0,
+                    step=0.1,
+                    value=0.5,
+                    label="Temperature",
+                    key="temperature"
+                )
+                top_p = st.slider(
+                    min_value=0.0,
+                    max_value=1.0,
+                    step=0.1,
+                    value=1.0,
+                    label="Top P",
+                    key="top_p"
+                )
+                top_k = st.slider(
+                    min_value=0,
+                    max_value=500,
+                    step=1,
+                    value=250,
+                    label="Top K",
+                    key="top_k"
+                )
 
-                # Get History Messages
-                if has_history():
-                    messages.extend(get_chat_history())
-                messages.append(message)
-                with st.spinner('I am thinking about this...'):
-                    response = run_multi_modal_prompt(bedrock_runtime, model_id, messages, max_tokens)
+        if "file_uploader_key" not in st.session_state:
+            st.session_state["file_uploader_key"] = 0
+            
+        if "claude-3" in model_id:
+            image = st.file_uploader("Image Query", accept_multiple_files=True, key=st.session_state["file_uploader_key"], on_change=image_update, help='Claude-V3 only', disabled=False)
+            image_list = []
+            for item in image:
+                st.image(item, caption=item.name)
+                image_list.append({"type": "image", "source": {"type": "base64", "media_type": item.type, "data": images_process(item)}})
+        else:
+            image = st.file_uploader("Upload images", help='Claude-V3 only', disabled=True)
+    
+        # Clear messages, including uploaded images
+        if st.sidebar.button("New Conversation", type="primary"):
+            st.session_state.messages = []
+            st.empty()
+            st.session_state["file_uploader_key"] += 1
+            st.rerun()
 
-                st.chat_message(name='assistant').write(response.get("content")[0].get("text"))
-                messages.append({
-                    "role": "assistant",
-                    "content": response.get("content")[0].get("text")
-                })
-                save_chat_history_message(messages)
-                logger.debug(json.dumps(response, indent=4))
+    with st.chat_message("assistant", avatar="./utils/assistant.png"):
+        st.write("I am an AI chatbot powered by Amazon Bedrock Claude, what can I do for you？💬")
 
-    except ClientError as err:
-        message = err.response["Error"]["Message"]
-        logger.error("A client error occurred: %s", message)
+    # Initialize chat history
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
 
+    # Initialize image track recorder
+    if "image_update" not in st.session_state:
+        st.session_state.image_update = False
+
+    # Display chat messages from history on app rerun
+    for message in st.session_state.messages:
+        if message["role"] == "assistant":
+            with st.chat_message(message["role"], avatar="./utils/assistant.png"):
+                st.markdown(message["content"][0]["text"])
+        else:
+            with st.chat_message(message["role"], avatar="./utils/user.png"):
+                for item in message["content"]:
+                    if item["type"] == "image":
+                        image_data = base64.b64decode(item["source"]["data"].encode('utf8'))
+                        st.image(image_data, width=50)
+                    else:
+                        st.markdown(item["text"])
+
+    if query := st.chat_input("Input your message..."):
+        # Display user message in chat message container
+        with st.chat_message("user", avatar="./utils/user.png"):
+            user_content = []
+            if st.session_state.image_update:
+                for item in image:
+                    st.image(item, width=50)
+                user_content = image_list
+            st.session_state.image_update = False
+            st.markdown(query)
+        # Add user message to chat history
+        user_content.append({"type": "text", "text": query})
+        st.session_state.messages.append({"role": "user", "content": user_content})
+        # Display assistant response in chat message container
+        with st.chat_message("assistant", avatar="./utils/assistant.png"):
+            system_message = system_prompt
+            messages = st.session_state.messages
+            bedrock_runtime = get_bedrock_runtime_client(
+                aws_access_key=os.environ.get('AWS_ACCESS_KEY_ID', ""), 
+                aws_secret_key=os.environ.get('AWS_SECRET_ACCESS_KEY', ""), 
+                aws_region=os.environ.get('AWS_REGION', ""))
+            with st.spinner('Thinking...'):
+                try:
+                    response= st.write_stream(stream_multi_modal_prompt(
+                        bedrock_runtime, model_id, system_message, messages, max_new_tokens, temperature, top_p, top_k
+                        )
+                    )
+                    assistant_content = [{"type": "text", "text": response}]
+                    st.session_state.messages.append({"role": "assistant", "content": assistant_content})
+                except ClientError as err:
+                    message = err.response["Error"]["Message"]
+                    logger.error("A client error occurred: %s", message)
+                    st.error(f"A client error occurred: {message}")
+                except Exception as e:
+                    logger.error(f"An unknown error occurred: {str(e)}")
+                    st.error(f"An unknown error occurred: {str(e)}") 
 
 if __name__ == "__main__":
     main()
