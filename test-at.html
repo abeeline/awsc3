@@ -1,0 +1,400 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>网页串口调试助手 (Web Serial Tool)</title>
+    <!-- 引入 Tailwind CSS 以快速构建美观的界面 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 为滚动条和整体布局添加一些自定义样式 */
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+        }
+        .log-container::-webkit-scrollbar {
+            width: 8px;
+        }
+        .log-container::-webkit-scrollbar-track {
+            background: #2d3748; /* dark:gray-800 */
+        }
+        .log-container::-webkit-scrollbar-thumb {
+            background-color: #4a5568; /* dark:gray-600 */
+            border-radius: 4px;
+        }
+        /* 当按钮被禁用时，降低其不透明度并改变鼠标指针样式 */
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white flex flex-col h-screen p-4 sm:p-6 md:p-8">
+
+
+    <div class="max-w-4xl w-full mx-auto flex flex-col flex-grow">
+        <!-- 头部信息 -->
+        <header class="mb-6">
+            <h1 class="text-3xl font-bold text-cyan-400">网页串口调试助手</h1>
+            <p class="text-gray-400 mt-1">通过浏览器直接连接和调试 USB/UART 串口设备。</p>
+        </header>
+
+
+        <!-- 连接控制面板 -->
+        <div class="bg-gray-800 p-4 rounded-lg shadow-lg mb-6 flex flex-wrap items-center gap-4">
+            <div class="flex-grow sm:flex-grow-0">
+                <label for="portSelector" class="text-sm font-medium mr-2">端口:</label>
+                <select id="portSelector" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500 min-w-[220px]">
+                    <!-- Port options will be populated by JavaScript -->
+                </select>
+            </div>
+            <div class="flex-grow sm:flex-grow-0">
+                <label for="baudRate" class="text-sm font-medium mr-2">波特率:</label>
+                <select id="baudRate" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                    <option value="9600">9600</option>
+                    <option value="19200">19200</option>
+                    <option value="38400">38400</option>
+                    <option value="57600">57600</option>
+                    <option selected value="115200">115200</option>
+                </select>
+            </div>
+            <div class="flex items-center gap-4">
+                <button id="connectButton" class="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-200">连接</button>
+                <button id="disconnectButton" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-200" disabled>断开连接</button>
+            </div>
+            <div id="status" class="flex items-center gap-2 text-sm">
+                <span id="status-indicator" class="h-3 w-3 rounded-full bg-red-500"></span>
+                <span id="status-text" class="text-gray-300">未连接</span>
+            </div>
+        </div>
+
+
+        <!-- 调制解调器状态显示 -->
+        <div class="bg-gray-800 p-4 rounded-lg shadow-lg mb-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 text-center">
+            <div>
+                <p class="text-sm text-gray-400">网络注册状态</p>
+                <p id="networkRegStatus" class="text-lg font-semibold text-cyan-400">--</p>
+            </div>
+            <div>
+                <p class="text-sm text-gray-400">网络模式</p>
+                <p id="networkMode" class="text-lg font-semibold text-cyan-400">--</p>
+            </div>
+            <div>
+                <p class="text-sm text-gray-400">小区信号 (dBm)</p>
+                <p id="signalStrength" class="text-lg font-semibold text-cyan-400">--</p>
+            </div>
+            <div>
+                <p class="text-sm text-gray-400">当前频段</p>
+                <p id="currentBand" class="text-lg font-semibold text-cyan-400">--</p>
+            </div>
+            <div>
+                <p class="text-sm text-gray-400">当前小区频点</p>
+                <p id="currentFrequency" class="text-lg font-semibold text-cyan-400">--</p>
+            </div>
+        </div>
+
+
+        <!-- 数据收发区域 -->
+        <div class="flex flex-col flex-grow min-h-0">
+            <!-- 接收数据显示 -->
+            <div class="bg-gray-800 rounded-t-lg p-4 flex-grow flex flex-col min-h-0">
+                <div class="flex justify-between items-center mb-2">
+                    <h2 class="text-lg font-semibold text-gray-300">接收区</h2>
+                    <button id="clearLogButton" class="text-sm bg-gray-700 hover:bg-gray-600 text-gray-300 py-1 px-3 rounded-md transition-colors">清空日志</button>
+                </div>
+                <div id="log" class="log-container bg-gray-900 w-full flex-grow rounded-md p-3 text-sm font-mono overflow-y-auto whitespace-pre-wrap break-all"></div>
+            </div>
+
+
+            <!-- 发送数据输入 -->
+            <div class="bg-gray-800 p-4 rounded-b-lg mt-1 flex gap-4">
+                <input type="text" id="dataInput" class="flex-grow bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500" placeholder="在此输入要发送的文本..." disabled>
+                <button id="sendButton" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors" disabled>发送</button>
+            </div>
+        </div>
+
+
+        <!-- 兼容性提示 -->
+        <footer class="text-center text-xs text-gray-500 mt-6">
+            <p id="notSupported" class="hidden">您的浏览器不支持 Web Serial API。请使用最新版的 Chrome、Edge 或 Opera 浏览器。</p>
+            <p>设备连接时，浏览器会弹出授权窗口，请选择您要连接的串口设备。</p>
+        </footer>
+    </div>
+
+
+    <script type="module">
+        // --- DOM 元素获取 ---
+        const connectButton = document.getElementById('connectButton');
+        const disconnectButton = document.getElementById('disconnectButton');
+        const baudRateSelect = document.getElementById('baudRate');
+        const portSelector = document.getElementById('portSelector');
+        const statusIndicator = document.getElementById('status-indicator');
+        const statusText = document.getElementById('status-text');
+        const logContainer = document.getElementById('log');
+        const clearLogButton = document.getElementById('clearLogButton');
+        const dataInput = document.getElementById('dataInput');
+        const sendButton = document.getElementById('sendButton');
+        const notSupportedMessage = document.getElementById('notSupported');
+
+
+        // --- 全局变量 ---
+        let port;
+        let reader;
+        let writer;
+        let keepReading = true;
+        let availablePorts = [];
+        const textEncoder = new TextEncoder();
+        const textDecoder = new TextDecoder();
+
+
+        // --- UI 更新函数 ---
+        const updateUIState = (isConnected) => {
+            connectButton.disabled = isConnected;
+            disconnectButton.disabled = !isConnected;
+            dataInput.disabled = !isConnected;
+            sendButton.disabled = !isConnected;
+            portSelector.disabled = isConnected;
+            baudRateSelect.disabled = isConnected;
+
+
+
+
+            if (isConnected) {
+                statusIndicator.classList.remove('bg-red-500');
+                statusIndicator.classList.add('bg-green-500');
+                statusText.textContent = '已连接';
+            } else {
+                statusIndicator.classList.remove('bg-green-500');
+                statusIndicator.classList.add('bg-red-500');
+                statusText.textContent = '未连接';
+            }
+        };
+
+
+        // --- 核心功能 ---
+
+
+        // 填充端口选择器
+        const populatePortSelector = async () => {
+            try {
+                availablePorts = await navigator.serial.getPorts();
+                portSelector.innerHTML = '';
+
+
+                if (availablePorts.length === 0) {
+                    const option = document.createElement('option');
+                    option.textContent = '未找到已授权设备';
+                    option.disabled = true;
+                    portSelector.appendChild(option);
+                } else {
+                    availablePorts.forEach((port, index) => {
+                        const portInfo = port.getInfo();
+                        const option = document.createElement('option');
+                        option.value = index;
+                        option.textContent = `USB Serial (VID: ${portInfo.usbVendorId}, PID: ${portInfo.usbProductId})`;
+                        portSelector.appendChild(option);
+                    });
+                }
+                
+                const newOption = document.createElement('option');
+                newOption.textContent = '连接新设备...';
+                newOption.value = 'new';
+                portSelector.appendChild(newOption);
+            } catch (error) {
+                 logToTerminal('error', `无法获取端口列表: ${error.message}`);
+            }
+        };
+
+
+        // 连接设备
+        const connect = async () => {
+            const selectedValue = portSelector.value;
+            
+            try {
+                if (selectedValue === 'new') {
+                    // 请求一个新端口
+                    port = await navigator.serial.requestPort();
+                    // 授权后刷新端口列表
+                    await populatePortSelector();
+                } else if (availablePorts.length > 0) {
+                    // 使用下拉列表中选择的端口
+                    const selectedIndex = parseInt(selectedValue);
+                    port = availablePorts[selectedIndex];
+                } else {
+                    // 如果列表为空，也尝试请求新端口
+                    port = await navigator.serial.requestPort();
+                    await populatePortSelector();
+                }
+
+
+                if (!port) {
+                    logToTerminal('error', '未选择任何端口。');
+                    return;
+                }
+                
+                // 打开端口并开始通信
+                await port.open({ baudRate: parseInt(baudRateSelect.value) });
+                writer = port.writable.getWriter();
+                updateUIState(true);
+                logToTerminal('info', `设备已连接，波特率: ${baudRateSelect.value}`);
+                keepReading = true;
+                readLoop();
+
+
+            } catch (error) {
+                logToTerminal('error', `连接失败: ${error.message}`);
+                port = null;
+            }
+        };
+
+
+        // 断开连接
+        const disconnect = async () => {
+            if (!port) return;
+            keepReading = false;
+            
+            try {
+                if (reader) {
+                    await reader.cancel();
+                }
+            } catch (error) {
+                 // 忽略取消错误
+            }
+
+
+            try {
+                if (writer) {
+                    await writer.close();
+                }
+            } catch (error) {
+                logToTerminal('error', `关闭写入器时出错: ${error.message}`);
+            }
+            
+            try {
+                await port.close();
+            } catch (error) {
+                logToTerminal('error', `关闭端口时出错: ${error.message}`);
+            }
+            
+            port = null;
+            updateUIState(false);
+            logToTerminal('info', '设备已断开连接。');
+        };
+
+
+        // 循环读取数据
+        const readLoop = async () => {
+             if (!port || !port.readable) return;
+            reader = port.readable.getReader();
+            try {
+                while (port.readable && keepReading) {
+                    const { value, done } = await reader.read();
+                    if (done) {
+                        break;
+                    }
+                    const text = textDecoder.decode(value, { stream: true });
+                    logToTerminal('data', text);
+                }
+            } catch (error) {
+                if(keepReading) { // Only log error if not intentionally disconnected
+                   logToTerminal('error', `读取错误: ${error.message}`);
+                   await disconnect();
+                }
+            } finally {
+                if (reader) {
+                   try {
+                       reader.releaseLock();
+                   } catch(e) { /* Ignore */ }
+                }
+            }
+        };
+
+
+        // 发送数据
+        const sendData = async () => {
+            const data = dataInput.value;
+            if (data.length > 0 && writer) {
+                try {
+                    await writer.write(textEncoder.encode(data + '\n')); 
+                    logToTerminal('sent', `> ${data}`);
+                    dataInput.value = '';
+                } catch (error) {
+                    logToTerminal('error', `发送失败: ${error.message}`);
+                    await disconnect();
+                }
+            }
+        };
+
+
+        // 在终端区域打印日志
+        const logToTerminal = (type, message) => {
+            const p = document.createElement('p');
+            const timestamp = new Date().toLocaleTimeString();
+            let content = '';
+
+
+            switch (type) {
+                case 'info':
+                    content = `<span class="text-cyan-400">${message}</span>`;
+                    break;
+                case 'error':
+                    content = `<span class="text-red-400">${message}</span>`;
+                    break;
+                case 'sent':
+                     content = `<span class="text-yellow-400">${message}</span>`;
+                    break;
+                case 'data':
+                    content = message.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                    break;
+                default:
+                    content = message;
+            }
+            
+            p.innerHTML = `<span class="text-gray-500 mr-2">[${timestamp}]</span>${content}`;
+            logContainer.appendChild(p);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        };
+
+
+        // 清空日志
+        const clearLog = () => {
+            logContainer.innerHTML = '';
+        };
+        
+        // --- 初始化和事件监听器 ---
+        const initialize = async () => {
+             if (!('serial' in navigator)) {
+                notSupportedMessage.classList.remove('hidden');
+                connectButton.disabled = true;
+                baudRateSelect.disabled = true;
+                portSelector.disabled = true;
+                return;
+            }
+            await populatePortSelector();
+
+
+            connectButton.addEventListener('click', connect);
+            disconnectButton.addEventListener('click', disconnect);
+            sendButton.addEventListener('click', sendData);
+            dataInput.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') sendData();
+            });
+            clearLogButton.addEventListener('click', clearLog);
+            
+            navigator.serial.addEventListener('disconnect', async (event) => {
+                logToTerminal('error', '设备已被物理拔出或断开。');
+                if (port && port === event.target) {
+                    // UI is already locked, so we just need to call disconnect logic
+                    await disconnect();
+                }
+                // Refresh the port list
+                await populatePortSelector();
+            });
+        };
+
+
+        initialize();
+
+
+    </script>
+</body>
+</html>
