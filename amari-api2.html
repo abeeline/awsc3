@@ -1,0 +1,654 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amarisoft 智能控制器</title>
+    <!-- 引入 Tailwind CSS 以实现快速美观的 UI -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 1. 引入 Mammoth.js 用于在浏览器端读取 .docx 文件 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.7.0/mammoth.browser.min.js"></script>
+    <style>
+        /* 使用 Inter 字体，更美观 */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* 为日志条目添加一些样式 */
+        .log-entry {
+            font-family: 'Menlo', 'Consolas', monospace;
+            font-size: 0.875rem;
+            padding: 4px 8px;
+            border-radius: 4px;
+            margin-bottom: 4px;
+        }
+        .log-sent {
+            background-color: #e0f2fe; /* light-blue-100 */
+            color: #0c4a6e; /* blue-900 */
+        }
+        .log-received {
+            background-color: #dcfce7; /* light-green-100 */
+            color: #166534; /* green-900 */
+        }
+        .log-error {
+            background-color: #fee2e2; /* light-red-100 */
+            color: #991b1b; /* red-900 */
+        }
+        .log-system {
+            background-color: #f3f4f6; /* gray-100 */
+            color: #4b5563; /* gray-600 */
+        }
+        /* 加载中旋转动画 */
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<!-- [MODIFIED] 1. 将 body 设为 h-screen 和 flex-row，使其成为全高、横向的主容器 -->
+<body class="bg-gray-100 h-screen flex flex-row">
+    
+    <!-- [REMOVED] 2. 移除了原有的 <div class="flex flex-col md:flex-row md:h-screen"> 包装器 -->
+
+
+    <!-- ========================== -->
+    <!-- 左侧：控制面板与日志 -->
+    <!-- ========================== -->
+    <!-- [MODIFIED] 3. 宽度固定为 w-1/2 (不再响应式)，并设为 h-full 填满父容器 -->
+    <div class="w-1/2 p-4 space-y-4 bg-white shadow-lg flex flex-col h-full">
+        
+        <!-- 1. 连接区域 -->
+        <div class="border-b pb-4">
+                <h2 class="text-xl font-semibold text-gray-800">1. 连接到设备</h2>
+                <div class="flex items-center space-x-2 mt-2">
+                    <input type="text" id="ws-url" value="ws://127.0.0.1:9001" class="flex-grow p-2 border rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    <button id="btn-connect" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 shadow-sm">连接</button>
+                    <button id="btn-disconnect" class="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 shadow-sm" disabled>断开</button>
+                    <div id="status-indicator" class="w-4 h-4 rounded-full bg-gray-400" title="未连接"></div>
+                </div>
+                <p class="text-xs text-gray-500 mt-1">默认 eNB/gNB 端口为 9001，MME/AMF 为 9000。</p>
+            </div>
+
+
+            <!-- 2. AI 指令生成 -->
+            <div class="border-b pb-4">
+                <h2 class="text-xl font-semibold text-gray-800">2. 生成 API 指令</h2>
+                
+                <!-- 2a. [新增] LLM API 设置 -->
+                <div class="space-y-2 border-b pb-4 my-4">
+                    <h3 class="text-lg font-medium text-gray-700">LLM API 设置</h3>
+                    <div>
+                        <label for="llm-api-url" class="text-sm font-medium text-gray-700">API URL</label>
+                        <input type="text" id="llm-api-url" value="https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=" class="w-full p-2 border rounded-md shadow-sm text-sm">
+                    </div>
+                    <div>
+                        <label for="llm-api-key" class="text-sm font-medium text-gray-700">API Key (若Key在URL中则留空)</label>
+                        <input type="password" id="llm-api-key" placeholder="例如 OpenAI SK-..." class="w-full p-2 border rounded-md shadow-sm text-sm">
+                    </div>
+                    <div>
+                        <label for="llm-model-name" class="text-sm font-medium text-gray-700">Model Name</label>
+                        <input type="text" id="llm-model-name" value="gemini-2.5-flash-preview-09-2025" class="w-full p-2 border rounded-md shadow-sm text-sm" placeholder="例如 gpt-4, gemini-pro, ...">
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">注意：Gemini API (Google AI Studio) Key 已在 URL 中。OpenAI/Local API 请在此处填 Key。</p>
+                </div>
+
+
+                <!-- 2b. 文档上传 -->
+                <div class="mt-2">
+                    <label for="doc-upload" class="text-sm font-medium text-gray-700">上传参考文档 (可选, .docx)</label>
+                    <div class="flex items-center space-x-2">
+                        <input type="file" id="doc-upload" accept=".docx" class="flex-grow p-1 border rounded-md text-sm file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
+                        <button id="doc-clear" class="text-xs text-red-500 hover:underline">清除</button>
+                    </div>
+                    <span id="doc-status" class="text-xs text-green-600"></span>
+                </div>
+
+
+                <!-- 2b. 自然语言提示 -->
+                <textarea id="natural-prompt" class="w-full h-24 p-2 border rounded-md shadow-sm mt-2 focus:ring-blue-500 focus:border-blue-500" placeholder="例如：请配置5G NR小区 cell 1，band N78，带宽40M，PLMN 001-01"></textarea>
+                <button id="btn-generate" class="w-full px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 shadow-sm mt-2 flex items-center justify-center space-x-2" disabled>
+                    <span id="generate-text">生成指令</span>
+                    <div id="generate-loader" class="loader hidden"></div>
+                </button>
+            </div>
+
+
+            <!-- 3. 发送指令 -->
+            <div class="border-b pb-4">
+                <h2 class="text-xl font-semibold text-gray-800">3. 发送与日志</h2>
+                <textarea id="api-command" class="w-full h-32 p-2 font-mono text-sm bg-gray-900 text-green-300 rounded-md shadow-inner mt-2" placeholder="AI 生成的 JSON-RPC 指令将出现在这里..."></textarea>
+                <button id="btn-send" class="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 shadow-sm mt-2" disabled>发送指令</button>
+            </div>
+
+
+            <!-- 4. 日志窗口 -->
+            <div class="flex-grow flex flex-col overflow-hidden">
+                <div class="flex justify-between items-center">
+                    <h3 class="text-lg font-medium text-gray-700">WebSocket 日志</h3>
+                    <button id="btn-clear-log" class="text-xs text-blue-500 hover:underline">清除日志</button>
+                </div>
+                <div id="log-window" class="flex-grow overflow-y-auto bg-gray-50 p-3 rounded-md border shadow-inner mt-2">
+                    <!-- 日志条目将在这里动态添加 -->
+                </div>
+            </div>
+        </div>
+
+
+        <!-- ========================== -->
+    <!-- 右侧：设备状态窗口 -->
+    <!-- ========================== -->
+    <!-- [MODIFIED] 4. 宽度固定为 w-1/2，h-full 填满，并设为 overflow-y-auto (右侧面板可滚动) -->
+    <div class="w-1/2 p-4 bg-gray-800 text-white flex flex-col h-full overflow-y-auto">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-semibold">设备当前配置 (config_get)</h2>
+                <button id="btn-refresh-status" class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 shadow-sm" disabled>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline-block mr-1" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 110 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.004 14a1 1 0 01.996-1.293A7.002 7.002 0 0111 17.001a1 1 0 11-1 1.732A9.002 9.002 0 002.004 9H5a1 1 0 110-2h4a1 1 0 011 1v5a1 1 0 01-1 1H5.004a1 1 0 01-.996-.707z" clip-rule="evenodd" />
+                    </svg>
+                刷新状态
+            </button>
+        </div>
+        <!-- [MODIFIED] 5. 移除了 flex-grow 和 overflow-y-auto，因为父容器(右侧面板)现在负责滚动 -->
+        <pre id="status-window" class="bg-gray-900 p-4 rounded-md text-sm text-green-300 font-mono shadow-inner">请先连接设备，然后点击“刷新状态”...
+</pre>
+        <!-- 6. 您未来可以在这里添加更多模块, 例如:
+        <h2 class="text-xl font-semibold mt-6 mb-4">UE 列表</h2>
+        <pre class="bg-gray-900 p-4 rounded-md ...">UEs...</pre>
+        -->
+    </div>
+    <!-- [REMOVED] 7. 移除了多余的 </div> 包装器 -->
+
+
+    <script type="module">
+        // ==========================
+        // 全局变量
+        // ==========================
+        let ws = null;
+        let uploadedDocContext = ""; // 1. 用于存储上传的文档纯文本
+
+
+        // ==========================
+        // DOM 元素获取
+        // ==========================
+        const wsUrlInput = document.getElementById('ws-url');
+        const btnConnect = document.getElementById('btn-connect');
+        const btnDisconnect = document.getElementById('btn-disconnect');
+        const statusIndicator = document.getElementById('status-indicator');
+        const logWindow = document.getElementById('log-window');
+        
+        // [新增] LLM 设置的 DOM
+        const llmApiUrl = document.getElementById('llm-api-url');
+        const llmApiKey = document.getElementById('llm-api-key');
+        const llmModelName = document.getElementById('llm-model-name');
+        
+        const docUpload = document.getElementById('doc-upload');
+        const docStatus = document.getElementById('doc-status');
+        const docClear = document.getElementById('doc-clear');
+
+
+        const btnGenerate = document.getElementById('btn-generate');
+        const btnSend = document.getElementById('btn-send');
+        const btnRefreshStatus = document.getElementById('btn-refresh-status');
+        
+        const promptTextarea = document.getElementById('natural-prompt');
+        const commandTextarea = document.getElementById('api-command');
+        const statusWindow = document.getElementById('status-window');
+        
+        /**
+         * 调用 Gemini API 来生成内容。
+         * @param {string} fullPrompt - 包含(可选)上下文和用户问题的完整提示。
+         * @returns {Promise<string>} - 返回生成的 JSON 字符串。
+         */
+        async function callGemini(fullPrompt) {
+            // [MODIFIED] 从输入框读取 LLM 配置
+            const apiKey = llmApiKey.value;
+            let apiUrl = llmApiUrl.value;
+            const modelName = llmModelName.value;
+
+
+            // 自动处理 Google API Key（如果key在URL中，则 apiKey 字段应为空）
+            // 如果 apiKey 字段有值，且是 Google API，则假定 URL 缺少 key
+            if (apiUrl.includes('generativelanguage.googleapis.com') && apiKey && !apiUrl.includes('key=')) {
+                apiUrl = `${apiUrl}${apiKey}`; // 假设 URL 缺少 key=
+            }
+            
+            // 2. 修改系统提示, 告诉 AI 优先使用用户提供的上下文
+            const systemPrompt = `
+你是一个 Amarisoft Remote API 专家。你的任务是严格根据用户的自然语言需求，将其转换为一个 JSON-RPC 命令。
+规则：
+1.  **优先使用上下文**：如果用户的提示中包含了 "[文档上下文]"，你必须严格依据该上下文中的参数名、消息结构和示例来生成 JSON。
+2.  **只输出 JSON**：你的回复必须是且仅是一个原始的 JSON 对象，不能包含 "json" 标签或任何解释性文字。
+3.  **使用 'config_set'**：对于修改配置的请求，使用 'config_set' 消息 (除非文档中指定了其他消息)。
+4.  **嵌套 'cells'**：所有小区（cell）相关的配置，必须嵌套在 'cells' 键中。
+5.  **默认值 (无上下文时)**：如果提示中没有提供上下文，你可以依据你的通用知识进行映射 (例如 'band N78' -> 'band: 78')。
+6.  **结构示例 (不要包含在你的回复中)**：一个有效的 JSON 可能是 '{"message": "config_set", "cells": {"1": {"band": 78, "N_RB_DL": 106}}}'
+7.  **其他命令 (不要包含在你的回复中)**：如果用户要求 "获取UE列表" -> '{"message": "ue_get"}'。如果要求 "获取统计" -> '{"message": "stats"}'。
+`;
+
+
+            // [MODIFIED] 根据 API URL 动态构建 Payload 和 Headers
+            let payload;
+            let headers = { 'Content-Type': 'application/json' };
+            let isGeminiApi = apiUrl.includes('generativelanguage.googleapis.com');
+
+
+            if (isGeminiApi) {
+                // --- 构造 Gemini Payload ---
+                payload = {
+                    contents: [{
+                        parts: [{ text: fullPrompt }] 
+                    }],
+                    systemInstruction: {
+                        parts: [{ text: systemPrompt }]
+                    },
+                    // (移除 generationConfig 以保持简洁)
+                };
+                // Gemini API Key 在 URL 中，所以 Headers 不需要 Auth
+            } else {
+                // --- 构造 OpenAI 兼容 (OAI) Payload ---
+                // (用于 OpenAI, Mistral, 或本地 LLM)
+                if (apiKey) {
+                    headers['Authorization'] = `Bearer ${apiKey}`;
+                }
+                payload = {
+                    model: modelName,
+                    messages: [
+                        { "role": "system", "content": systemPrompt },
+                        { "role": "user", "content": fullPrompt }
+                    ],
+                    // 尝试请求 JSON 输出，如果 OAI 兼容 API 支持的话
+                    // response_format: { "type": "json_object" } 
+                    // 移除 response_format 以最大化兼容本地模型
+                };
+            }
+
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify(payload)
+                });
+
+
+                if (!response.ok) {
+                    // 尝试读取错误体
+                    const errorBody = await response.text();
+                    throw new Error(`API Error: ${response.status} ${response.statusText}. Body: ${errorBody}`);
+                }
+                
+                const result = await response.json();
+                let jsonText = "";
+
+
+                if (isGeminiApi) {
+                    // --- 解析 Gemini 响应 ---
+                    if (result.candidates && result.candidates[0].content && result.candidates[0].content.parts[0]) {
+                        jsonText = result.candidates[0].content.parts[0].text;
+                    } else {
+                        throw new Error("Gemini API 响应格式无效。");
+                    }
+                } else {
+                    // --- 解析 OAI 兼容 响应 ---
+                    if (result.choices && result.choices[0].message && result.choices[0].message.content) {
+                        jsonText = result.choices[0].message.content;
+                    } else {
+                        throw new Error("OpenAI-compatible API 响应格式无效。");
+                    }
+                }
+                
+                // 4. 清理 AI 可能返回的 markdown 标签
+                jsonText = jsonText.trim().replace(/^```json\n?/, '').replace(/```$/, '');
+
+
+                // 我们将其解析为对象，然后再格式化（美化）字符串
+                const jsonObj = JSON.parse(jsonText); 
+                return JSON.stringify(jsonObj, null, 2); // 返回美化后的 JSON 字符串
+                
+            } catch (error) {
+                console.error("callGemini 失败:", error);
+                throw error;
+            }
+        }
+
+
+        /**
+         * 向日志窗口添加一条消息
+         * @param {string} message - 要记录的消息
+         * @param {'sent' | 'received' | 'error' | 'system'} type - 消息类型
+         */
+        function addLog(message, type) {
+            const entry = document.createElement('div');
+            let typeClass = 'log-system';
+            let prefix = '[SYS]';
+            if (type === 'sent') {
+                typeClass = 'log-sent';
+                prefix = '[SENT]';
+            } else if (type === 'received') {
+                typeClass = 'log-received';
+                prefix = '[RECV]';
+            } else if (type === 'error') {
+                typeClass = 'log-error';
+                prefix = '[ERR]';
+            }
+            
+            entry.className = `log-entry ${typeClass}`;
+            entry.textContent = `${new Date().toLocaleTimeString()} ${prefix} ${message}`;
+            logWindow.appendChild(entry);
+            // 自动滚动到底部
+            logWindow.scrollTop = logWindow.scrollHeight;
+        }
+
+
+        document.getElementById('btn-clear-log').addEventListener('click', () => {
+            logWindow.innerHTML = '';
+        });
+
+
+        /**
+         * 更新 UI 的连接状态
+         * @param {boolean} isConnected - 是否已连接
+         */
+        function updateUiState(isConnected) {
+            wsUrlInput.disabled = isConnected;
+            btnConnect.disabled = isConnected;
+            btnDisconnect.disabled = !isConnected;
+            
+            // [FIX] 移除对“生成指令”按钮的连接状态依赖，使其始终可用
+            // btnGenerate.disabled = !isConnected; // <-- 移除此行
+            
+            // 发送和刷新按钮 *仍然* 依赖连接
+            btnSend.disabled = !isConnected;
+            btnRefreshStatus.disabled = !isConnected;
+
+
+            if (isConnected) {
+                statusIndicator.classList.remove('bg-gray-400');
+                statusIndicator.classList.add('bg-green-500');
+                statusIndicator.title = '已连接';
+            } else {
+                statusIndicator.classList.add('bg-gray-400');
+                statusIndicator.classList.remove('bg-green-500');
+                statusIndicator.title = '未连接';
+            }
+        }
+
+
+        /**
+         * 连接 WebSocket
+         */
+        function connectWs() {
+            const url = wsUrlInput.value;
+            if (!url) {
+                addLog('请输入 WebSocket URL', 'error');
+                return;
+            }
+
+
+            addLog(`正在连接到 ${url}...`, 'system');
+            
+            try {
+                // 注意：浏览器 WebSocket API 不允许设置 Origin，
+                // 浏览器会自动发送当前页面的 Origin。
+                // 如果 Amarisoft 设备有严格的 Origin 校验，您可能需要从同域提供此 HTML 文件。
+                ws = new WebSocket(url);
+
+
+                ws.onopen = () => {
+                    addLog('WebSocket 连接成功！', 'system');
+                    updateUiState(true);
+                    // 连接成功后，立即获取一次当前配置
+                    refreshStatus(); 
+                };
+
+
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        addLog(JSON.stringify(data, null, 2), 'received');
+                        
+                        // 检查是否是 config_get 的响应
+                        if (data.message === 'config_get' || data.message_id === 'status_refresh') {
+                            statusWindow.textContent = JSON.stringify(data, null, 2);
+                        }
+                        
+                        // 处理 Amarisoft 的认证请求（如果需要）
+                        if (data.message === 'authenticate') {
+                            addLog("服务器请求认证。本演示应用未实现认证，请在 .cfg 中禁用 com_auth，或修改此代码以支持认证。", 'system');
+                            // TODO: 在此实现 HMAC-SHA256 认证逻辑（如文档中 Python 示例所示）
+                        }
+
+
+                    } catch (e) {
+                        addLog(`收到非 JSON 消息: ${event.data}`, 'received');
+                    }
+                };
+
+
+                ws.onerror = (error) => {
+                    console.error('WebSocket Error:', error);
+                    // [FIX] 提供更详细、可操作的错误日志，帮助用户排查环境问题
+                    addLog('WebSocket 连接失败。请检查：', 'error');
+                    addLog(`1. 目标 URL (${wsUrlInput.value}) 是否正确？`, 'error');
+                    addLog('2. Amarisoft eNB/gNB 进程是否已在目标主机上运行？', 'error');
+                    addLog('3. (MME/AMF? 默认端口应为 9000)', 'error');
+                    addLog('4. 目标主机上的防火墙是否阻止了此端口的连接？', 'error');
+                    addLog('5. (高级) 设备 .cfg 中是否启用了 com_auth 或严格的 Origin 校验？', 'error');
+                    updateUiState(false);
+                };
+
+
+                ws.onclose = () => {
+                    addLog('WebSocket 连接已断开。', 'system');
+                    updateUiState(false);
+                    ws = null;
+                };
+
+
+            } catch (e) {
+                addLog(`连接失败: ${e.message}`, 'error');
+                updateUiState(false);
+            }
+        }
+
+
+        /**
+         * 断开 WebSocket
+         */
+        function disconnectWs() {
+            if (ws) {
+                ws.close();
+            }
+        }
+
+
+        /**
+         * 处理“生成指令”按钮点击
+         */
+        async function handleGenerate() {
+            const userPrompt = promptTextarea.value; // 用户的原始问题
+            if (!userPrompt) {
+                addLog('请输入自然语言需求', 'error');
+                return;
+            }
+
+
+            addLog('正在请求 AI 生成指令...', 'system');
+            const btnText = document.getElementById('generate-text');
+            const loader = document.getElementById('generate-loader');
+            
+            btnGenerate.disabled = true;
+            btnText.textContent = '生成中...';
+            loader.classList.remove('hidden');
+
+
+            // 5. 构建最终的提示词
+            let fullPrompt = "";
+            if (uploadedDocContext) {
+                addLog('已附加文档上下文...', 'system');
+                fullPrompt = `
+[文档上下文]:
+---
+${uploadedDocContext}
+---
+
+
+[我的需求]:
+${userPrompt}
+
+
+请根据上面的 [文档上下文] 来回答 [我的需求]。
+`;
+            } else {
+                fullPrompt = userPrompt; // 仅使用用户提示
+            }
+
+
+            try {
+                const jsonCommand = await callGemini(fullPrompt); // 6. 发送 fullPrompt
+                commandTextarea.value = jsonCommand;
+                addLog('AI 指令生成成功！', 'system');
+            } catch (error) {
+                // [FIX] 恢复了 catch 块的完整内容
+                addLog(`AI 指令生成失败: ${error.message}`, 'error');
+                commandTextarea.value = `{"error": "生成失败", "details": "${error.message}"}`;
+            } finally {
+                // [FIX] 恢复了 finally 块的完整内容
+                btnGenerate.disabled = false;
+                btnText.textContent = '生成指令';
+                loader.classList.add('hidden');
+            }
+        }
+
+
+        /**
+         * 发送 API 指令
+         */
+        function sendMessage() {
+            const command = commandTextarea.value;
+            if (!command) {
+                addLog('没有可发送的指令', 'error');
+                return;
+            }
+
+
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                try {
+                    // 校验是否为合法 JSON
+                    JSON.parse(command);
+                    ws.send(command);
+                    addLog(command, 'sent');
+                } catch (e) {
+                    addLog(`发送失败：指令不是有效的 JSON。 ${e.message}`, 'error');
+                }
+            } else {
+                addLog('发送失败：WebSocket 未连接。', 'error');
+            }
+        }
+
+
+        /**
+         * 刷新设备状态
+         */
+        function refreshStatus() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const cmd = JSON.stringify({
+                    message: "config_get",
+                    message_id: "status_refresh" // 使用 message_id 来跟踪响应
+                });
+                ws.send(cmd);
+                addLog(cmd, 'sent');
+                statusWindow.textContent = "正在获取最新配置...";
+            } else {
+                addLog('刷新失败：WebSocket 未连接。', 'error');
+            }
+        }
+        
+        // ==========================
+        // 7. 新增：文档处理逻辑
+        // ==========================
+        
+        /**
+         * 处理文件上传
+         */
+        async function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) {
+                return;
+            }
+
+
+            if (file.type !== 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+                addLog('上传失败：请选择 .docx 文件。', 'error');
+                docStatus.textContent = '请选择 .docx 文件。';
+                docStatus.className = 'text-xs text-red-600';
+                return;
+            }
+
+
+            docStatus.textContent = '正在解析文档...';
+            docStatus.className = 'text-xs text-yellow-600';
+
+
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const result = await mammoth.extractRawText({ arrayBuffer: arrayBuffer });
+                uploadedDocContext = result.value; // 存储纯文本
+                
+                docStatus.textContent = `文档 "${file.name}" 加载成功！`;
+                // [FIX] 恢复了 try 块的完整内容
+                docStatus.className = 'text-xs text-green-600';
+                addLog(`文档解析成功，共 ${uploadedDocContext.length} 字符。`, 'system');
+
+
+            } catch (error) {
+                console.error("Mammoth.js 解析失败:", error);
+                addLog(`文档解析失败: ${error.message}`, 'error');
+                docStatus.textContent = '文档解析失败。';
+                docStatus.className = 'text-xs text-red-600';
+                uploadedDocContext = "";
+            }
+        }
+
+
+        /**
+         * 清除已上传的文档
+         */
+        function clearDocument() {
+            uploadedDocContext = "";
+            docUpload.value = null; // 清空文件输入
+            docStatus.textContent = "";
+            addLog('已清除文档上下文。', 'system');
+        }
+
+
+        // ==========================
+        // 绑定事件监听器
+        // ==========================
+        btnConnect.addEventListener('click', connectWs);
+        btnDisconnect.addEventListener('click', disconnectWs);
+        btnGenerate.addEventListener('click', handleGenerate);
+        btnSend.addEventListener('click', sendMessage);
+        btnRefreshStatus.addEventListener('click', refreshStatus);
+
+
+        docUpload.addEventListener('change', handleFileUpload); // 8. 绑定上传事件
+        docClear.addEventListener('click', clearDocument);      // 9. 绑定清除事件
+
+
+        // 初始化 UI 状态
+        updateUiState(false);
+        
+        // [FIX] 在初始化时手动启用“生成指令”按钮
+        btnGenerate.disabled = false;
+    </script>
+</body>
+</html>
