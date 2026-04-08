@@ -1051,6 +1051,11 @@
         "priority",
       ];
 
+      const PERSONA_PRIORITY_LIMIT = 5;
+      const PERSONA_DISPLAY_ISSUE_LIMIT = 3;
+      const PERSONA_DISPLAY_QUESTION_LIMIT = 1;
+      const PERSONA_KEYS = ["spec", "carrier", "ux"];
+
       const TESTCASE_REQUIRED_KEYS = [
         "tc_id",
         "objective_id",
@@ -1090,6 +1095,8 @@ Task: Review each RequirementItem for missing state-machine conditions, timers, 
 Return JSON issues list per req_id.
 Quality rules:
 - For EACH req_id, write requirement-specific issues with protocol/state-machine focus.
+- Within each req_id, keep only the 1-2 most important issues. open_questions are optional, and if present keep at most 1 directly answerable question.
+- Sort review items by importance so the most critical protocol/testability gaps appear first.
 - open_questions are optional for spec review; only add them when there is concrete missing information that product/test owners can answer directly.
 - Do not pad every req_id with generic open_questions just to fill the field.
 All human-readable natural language inside JSON values must be written in Simplified Chinese. Keep schema keys, req_id, and score field names unchanged. 最终以“简体中文”输出。
@@ -1109,6 +1116,8 @@ Hard quality rules:
 - For EACH req_id, write requirement-specific issues and open_questions. Do not reuse the same generic wording across different req_id.
 - Each review item MUST include all fields: req_id, issues, rewrite_suggestion, scores, must_observe, open_questions.
 - For Carrier review, issues must be a non-empty string array and open_questions must be a non-empty string array.
+- Within each req_id, keep only the 1-2 most important issues and at most 1 open_question for user confirmation.
+- Sort review items by importance so the highest-impact operator acceptance gaps appear first.
 - open_questions must be directly answerable by product/test owners, and must ask for concrete missing information such as KPI threshold, operator config combo, fallback trigger, timer, handover interruption budget, BWP/bandwidth combo, roaming behavior, business continuity expectation, or certification pitfall.
 - Avoid vague questions like “请确认运营商侧 KPI 门槛、业务组合和配置依赖” unless the requirement text itself is equally vague.
 - If one requirement is about fallback/reselection and another is about handover or BWP, their open_questions must be different in focus.
@@ -1126,6 +1135,8 @@ Hard quality rules:
 - For EACH req_id, write requirement-specific issues and open_questions. Do not reuse the same generic wording across different req_id.
 - Each review item MUST include all fields: req_id, issues, rewrite_suggestion, scores, must_observe, open_questions.
 - For UX review, issues must be a non-empty string array and open_questions must be a non-empty string array.
+- Within each req_id, keep only the 1-2 most important issues and at most 1 open_question for user confirmation.
+- Sort review items by importance so the highest-impact user experience gaps appear first.
 - open_questions must be directly answerable by product/test owners, and should ask for concrete user-facing expectations such as interruption duration, recovery time, service success rate, call/data continuity, UI prompt expectation, acceptable degradation, weak-signal behavior, or long-stability criteria.
 - Avoid vague questions like “请确认用户侧成功率、时延、稳定性与恢复预期” unless the requirement text itself is equally vague.
 - If one requirement is about fallback/reselection and another is about handover or BWP, their open_questions must be different in focus.
@@ -2149,6 +2160,91 @@ return_schema: {return_schema}`,
           .trim();
       }
 
+      function priorityWeight(priority) {
+        const text = normalizeLooseText(priority).toUpperCase();
+        if (text === "P0") return 4;
+        if (text === "P1") return 3;
+        if (text === "P2") return 2;
+        if (text === "P3") return 1;
+        return 0;
+      }
+
+      function numericScore(value) {
+        const num = Number(value);
+        return Number.isFinite(num) ? num : 0;
+      }
+
+      function keywordImportanceBonus(text, personaKey = "spec") {
+        const raw = normalizeLooseText(text).toLowerCase();
+        const common = [
+          "必须", "缺少", "失败", "中断", "掉话", "脱网", "无服务", "拒绝", "回落", "重建", "切换失败", "kpi", "阈值", "throughput",
+          "reject", "failure", "timer", "cause", "handover", "fallback", "reselection", "bwp", "bandwidth",
+        ];
+        const specSpecific = ["原因码", "定时器", "状态机", "协议", "rrc", "nas", "重选", "切换", "bwp"];
+        const carrierSpecific = ["运营商", "验收", "组合", "配置", "漫游", "成功率", "门槛", "吞吐", "驻留"];
+        const uxSpecific = ["用户", "体验", "时延", "恢复", "稳定性", "卡顿", "连续性", "感知", "弱覆盖"];
+        const keywords = common
+          .concat(personaKey === "spec" ? specSpecific : [])
+          .concat(personaKey === "carrier" ? carrierSpecific : [])
+          .concat(personaKey === "ux" ? uxSpecific : []);
+        return keywords.reduce((sum, keyword) => sum + (raw.includes(String(keyword).toLowerCase()) ? 2 : 0), 0);
+      }
+
+      function computePersonaReviewImportance(review, req = {}, personaKey = "spec", reqIndex = 0) {
+        const scores = review?.scores && typeof review.scores === "object" ? review.scores : {};
+        const issues = normalizeLooseStringList(review?.issues || []);
+        const questions = normalizeLooseStringList(review?.open_questions || []);
+        const title = normalizeLooseText(req?.title || "");
+        const evidence = normalizeLooseStringList(review?.must_observe || []);
+        let score = priorityWeight(req?.priority) * 100;
+        score += numericScore(scores.correctness_risk) * 14;
+        score += numericScore(scores.testability_gap) * 12;
+        score += numericScore(scores.ambiguity_level) * 8;
+        score += numericScore(scores.acceptance_risk) * 12;
+        score += numericScore(scores.user_impact) * 12;
+        score += numericScore(scores.priority) * 10;
+        score += Math.min(issues.length, 3) * 8;
+        score += Math.min(questions.length, 1) * 10;
+        score += Math.min(evidence.length, 4) * 2;
+        score += keywordImportanceBonus([title, ...issues, ...questions].join(" "), personaKey);
+        score -= reqIndex;
+        return score;
+      }
+
+      function trimReviewForDisplay(review) {
+        return {
+          ...review,
+          issues: normalizeLooseStringList(review?.issues || []).slice(0, PERSONA_DISPLAY_ISSUE_LIMIT),
+          open_questions: normalizeLooseStringList(review?.open_questions || []).slice(0, PERSONA_DISPLAY_QUESTION_LIMIT),
+          must_observe: normalizeLooseStringList(review?.must_observe || []).slice(0, 6),
+        };
+      }
+
+      function getPrioritizedPersonaReviews(personaReviews, requirements = [], limitPerPersona = PERSONA_PRIORITY_LIMIT) {
+        const reqMap = new Map((requirements || []).map((req, index) => [canonicalizeReqId(req?.req_id || "", requirements, index), { req, index }]));
+        const result = {};
+        PERSONA_KEYS.forEach((personaKey) => {
+          const reviews = normalizePersonaReviewData(personaReviews?.[personaKey] || {}, requirements).reviews || [];
+          const decorated = reviews.map((review, index) => {
+            const reqId = canonicalizeReqId(review.req_id, requirements, index);
+            const reqEntry = reqMap.get(reqId) || { req: {}, index };
+            return {
+              review: trimReviewForDisplay({ ...review, req_id: reqId }),
+              importance: computePersonaReviewImportance(review, reqEntry.req, personaKey, reqEntry.index),
+              reqIndex: reqEntry.index,
+            };
+          });
+          decorated.sort((a, b) => {
+            if (b.importance !== a.importance) return b.importance - a.importance;
+            return a.reqIndex - b.reqIndex;
+          });
+          result[personaKey] = {
+            reviews: decorated.slice(0, Math.max(1, limitPerPersona)).map((item) => item.review),
+          };
+        });
+        return result;
+      }
+
       function validatePersonaReviewQuality(data, requirements = [], personaKey = "spec") {
         validatePersonaReview(data, `${personaKey} review`);
         const normalized = normalizePersonaReviewData(data, requirements);
@@ -2246,24 +2342,25 @@ return_schema: {return_schema}`,
         }
       }
 
-      function collectReviewIssues(personaReviews) {
+      function collectReviewIssues(personaReviews, requirements = []) {
+        const prioritized = getPrioritizedPersonaReviews(personaReviews, requirements, PERSONA_PRIORITY_LIMIT);
         const issues = [];
-        ["spec", "carrier", "ux"].forEach((persona) => {
-          const reviews = personaReviews?.[persona]?.reviews || [];
+        PERSONA_KEYS.forEach((persona) => {
+          const reviews = prioritized?.[persona]?.reviews || [];
           reviews.forEach((item) => {
-            normalizeLooseStringList(item.issues || []).forEach((issue) => {
-              issues.push(`[${persona}|${item.req_id || ""}] ${issue}`);
-            });
+            const issue = normalizeLooseStringList(item.issues || [])[0] || "";
+            if (issue) issues.push(`[${persona}|${item.req_id || ""}] ${issue}`);
           });
         });
         return issues;
       }
 
-      function collectOpenQuestions(personaReviews) {
+      function collectOpenQuestions(personaReviews, requirements = []) {
+        const prioritized = getPrioritizedPersonaReviews(personaReviews, requirements, PERSONA_PRIORITY_LIMIT);
         const out = [];
         const seen = new Set();
-        ["spec", "carrier", "ux"].forEach((persona) => {
-          const reviews = personaReviews?.[persona]?.reviews || [];
+        PERSONA_KEYS.forEach((persona) => {
+          const reviews = prioritized?.[persona]?.reviews || [];
           reviews.forEach((item) => {
             normalizeLooseStringList(item.open_questions || []).forEach((question) => {
               const key = `${item.req_id || ""}::${question}`;
@@ -2329,7 +2426,7 @@ return_schema: {return_schema}`,
 
       function buildReviewFeedback(previousPersonaReviews, openQuestionAnswers) {
         const fbParts = [];
-        const issues = collectReviewIssues(previousPersonaReviews || {});
+        const issues = collectReviewIssues(previousPersonaReviews || {}, state.requirementSpec?.final_requirements || []);
         if (issues.length) {
           fbParts.push(`【上轮评审issues回灌】${issues.join(" | ")}`);
         }
@@ -3153,8 +3250,8 @@ return_schema: {return_schema}`,
         const roundSummary = {
           round,
           is_final_round: round >= 3,
-          issues: collectReviewIssues(personaReviews),
-          open_questions: collectOpenQuestions(personaReviews),
+          issues: collectReviewIssues(personaReviews, parsedRequirements),
+          open_questions: collectOpenQuestions(personaReviews, parsedRequirements),
         };
         const priorRounds = (state.requirementReviewHistory?.rounds || []).filter((item) => item.round !== round);
         priorRounds.push(roundSummary);
@@ -3172,8 +3269,8 @@ return_schema: {return_schema}`,
         state.requirementReviewHistory = buildRequirementReviewHistory(priorRounds, answeredQuestions);
 
         const ragHitText = getRagContext() ? "已带入补充上下文" : "未提供补充上下文";
-        setStatus(`测试需求评审完成：Round ${round}${round >= 3 ? "（终稿）" : ""}\n${ragHitText}\n当前待确认问题：${roundSummary.open_questions.length}`, roundSummary.open_questions.length ? "warn" : "normal");
-        logActivity(`Round ${round} 完成，待确认问题 ${roundSummary.open_questions.length} 个。`);
+        setStatus(`测试需求评审完成：Round ${round}${round >= 3 ? "（终稿）" : ""}\n${ragHitText}\n当前待确认问题：${roundSummary.open_questions.length}（每维最多 ${PERSONA_PRIORITY_LIMIT} 个）`, roundSummary.open_questions.length ? "warn" : "normal");
+        logActivity(`Round ${round} 完成，待确认问题 ${roundSummary.open_questions.length} 个（每维最多 ${PERSONA_PRIORITY_LIMIT} 个）。`);
         saveSession();
         renderAll();
         return {
@@ -3414,10 +3511,11 @@ return_schema: {return_schema}`,
               .join("")}</tbody></table>`
           : "<p>无</p>";
 
+        const prioritizedReviews = getPrioritizedPersonaReviews(personaReviews, reqs, PERSONA_PRIORITY_LIMIT);
         const reviewSections = [
-          ["规范评审", (personaReviews.spec || {}).reviews || []],
-          ["运营商评审", (personaReviews.carrier || {}).reviews || []],
-          ["现网体验评审", (personaReviews.ux || {}).reviews || []],
+          ["规范评审", (prioritizedReviews.spec || {}).reviews || []],
+          ["运营商评审", (prioritizedReviews.carrier || {}).reviews || []],
+          ["现网体验评审", (prioritizedReviews.ux || {}).reviews || []],
         ]
           .map(([label, items]) => {
             const list = Array.isArray(items) ? items : [];
@@ -3426,7 +3524,7 @@ return_schema: {return_schema}`,
                   .map((item) => `<tr><td>${esc(normalizeLooseText(item.req_id || ""))}</td><td>${esc(normalizeLooseStringList(item.issues || []).join("；"))}</td><td>${esc(normalizeLooseStringList(item.open_questions || []).join("；"))}</td><td>${esc(normalizeLooseText(item.rewrite_suggestion || ""))}</td></tr>`)
                   .join("")}</tbody></table>`
               : "<p>无</p>";
-            return `<section><h3>${esc(label)}</h3>${body}</section>`;
+            return `<section><h3>${esc(label)}</h3><p>按重要性排序，仅展示前 ${PERSONA_PRIORITY_LIMIT} 项关键问题。</p>${body}</section>`;
           })
           .join("");
 
@@ -3644,14 +3742,15 @@ return_schema: {return_schema}`,
           { key: "carrier", label: "运营商评审" },
           { key: "ux", label: "现网体验评审" },
         ];
+        const prioritizedReviews = getPrioritizedPersonaReviews(state.personaReviews || {}, state.requirementSpec?.final_requirements || [], PERSONA_PRIORITY_LIMIT);
         let html = "";
         personas.forEach((persona) => {
-          const items = state.personaReviews?.[persona.key]?.reviews || [];
+          const items = prioritizedReviews?.[persona.key]?.reviews || [];
           if (!items.length) return;
           const rows = items
             .map((item) => `<tr><td>${esc(normalizeLooseText(item.req_id || ""))}</td><td>${esc(normalizeLooseStringList(item.issues || []).join("；"))}</td><td>${esc(normalizeLooseStringList(item.open_questions || []).join("；"))}</td><td>${esc(normalizeLooseText(item.rewrite_suggestion || ""))}</td></tr>`)
             .join("");
-          html += `<h4>${esc(persona.label)}</h4><div class="scroll-box"><table><thead><tr><th>需求ID</th><th>问题项</th><th>待确认问题</th><th>改写建议</th></tr></thead><tbody>${rows}</tbody></table></div><div style="height:12px"></div>`;
+          html += `<h4>${esc(persona.label)}</h4><p class="hint">按重要性排序，仅展示前 ${PERSONA_PRIORITY_LIMIT} 项关键问题。</p><div class="scroll-box"><table><thead><tr><th>需求ID</th><th>问题项</th><th>待确认问题</th><th>改写建议</th></tr></thead><tbody>${rows}</tbody></table></div><div style="height:12px"></div>`;
         });
         els.reviewSummary.innerHTML = html || `<p class="render-empty">暂无评审过程记录。</p>`;
       }
