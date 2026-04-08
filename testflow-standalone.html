@@ -1,0 +1,3841 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TestFlow Standalone</title>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f3ede2;
+        --paper: #fffdf8;
+        --panel: #f9f4eb;
+        --line: #dccfb8;
+        --line-strong: #c8b693;
+        --ink: #1d2733;
+        --muted: #5f6b78;
+        --accent: #0f766e;
+        --accent-soft: #daf0eb;
+        --accent-strong: #0b5d57;
+        --warn: #c2410c;
+        --warn-soft: #ffedd5;
+        --danger: #b42318;
+        --danger-soft: #fde7e4;
+        --shadow: 0 22px 60px rgba(40, 38, 32, 0.08);
+        --radius-xl: 22px;
+        --radius-lg: 16px;
+        --radius-md: 12px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Avenir Next", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(15, 118, 110, 0.09), transparent 28%),
+          radial-gradient(circle at top right, rgba(194, 65, 12, 0.08), transparent 26%),
+          linear-gradient(180deg, #efe5d6 0%, var(--bg) 38%, #f8f5ef 100%);
+      }
+
+      a {
+        color: inherit;
+      }
+
+      .shell {
+        max-width: 1480px;
+        margin: 0 auto;
+        padding: 28px 18px 60px;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: 1.25fr 0.95fr;
+        gap: 20px;
+        align-items: stretch;
+        margin-bottom: 20px;
+      }
+
+      .hero-card,
+      .hero-side {
+        background: rgba(255, 253, 248, 0.94);
+        border: 1px solid rgba(200, 182, 147, 0.7);
+        border-radius: var(--radius-xl);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .hero-card {
+        padding: 28px 30px 26px;
+        background:
+          linear-gradient(135deg, rgba(255, 249, 239, 0.95) 0%, rgba(244, 252, 250, 0.94) 100%);
+      }
+
+      .hero-card h1 {
+        margin: 0;
+        font-size: clamp(30px, 4vw, 44px);
+        line-height: 1.02;
+        letter-spacing: -0.03em;
+      }
+
+      .hero-card p {
+        margin: 14px 0 0;
+        color: var(--muted);
+        line-height: 1.7;
+        font-size: 15px;
+      }
+
+      .hero-strip {
+        margin-top: 18px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: rgba(15, 118, 110, 0.08);
+        color: var(--accent-strong);
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .hero-side {
+        padding: 22px 24px;
+        background:
+          linear-gradient(160deg, rgba(255, 250, 241, 0.96) 0%, rgba(255, 255, 255, 0.9) 42%, rgba(243, 250, 248, 0.94) 100%);
+      }
+
+      .hero-side h2 {
+        margin: 0 0 14px;
+        font-size: 17px;
+      }
+
+      .hero-side ul {
+        margin: 0;
+        padding-left: 18px;
+        color: var(--muted);
+        line-height: 1.7;
+        font-size: 14px;
+      }
+
+      .panel {
+        background: rgba(255, 253, 248, 0.96);
+        border: 1px solid rgba(200, 182, 147, 0.72);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow);
+        margin-bottom: 18px;
+        overflow: hidden;
+      }
+
+      .panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 18px 20px;
+        border-bottom: 1px solid rgba(220, 207, 184, 0.9);
+        background: linear-gradient(180deg, rgba(249, 244, 235, 0.92), rgba(255, 253, 248, 0.9));
+      }
+
+      .panel-head h2,
+      .panel-head h3 {
+        margin: 0;
+        font-size: 18px;
+      }
+
+      .panel-head p {
+        margin: 4px 0 0;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .panel-body {
+        padding: 18px 20px 22px;
+      }
+
+      .field-grid {
+        display: grid;
+        gap: 14px;
+      }
+
+      .field-grid.cols-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .field-grid.cols-3 {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .field {
+        display: grid;
+        gap: 8px;
+      }
+
+      .field label {
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--muted);
+        letter-spacing: 0.01em;
+      }
+
+      .field input,
+      .field textarea,
+      .field select {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #fff;
+        color: var(--ink);
+        padding: 11px 13px;
+        font: inherit;
+        transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+      }
+
+      .field textarea {
+        min-height: 120px;
+        resize: vertical;
+        line-height: 1.65;
+      }
+
+      .field input:focus,
+      .field textarea:focus,
+      .field select:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.11);
+      }
+
+      .hint {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.6;
+      }
+
+      .builder-grid {
+        display: grid;
+        grid-template-columns: 1.08fr 0.92fr;
+        gap: 18px;
+      }
+
+      .builder-column {
+        display: grid;
+        gap: 16px;
+      }
+
+      .option-group {
+        border: 1px solid rgba(220, 207, 184, 0.92);
+        border-radius: 14px;
+        padding: 14px;
+        background: var(--panel);
+      }
+
+      .option-group h4 {
+        margin: 0 0 10px;
+        font-size: 14px;
+      }
+
+      .option-grid {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .feature-option {
+        display: grid;
+        gap: 4px;
+        align-content: start;
+        border: 1px solid rgba(220, 207, 184, 0.86);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.78);
+        padding: 12px 12px 11px;
+        cursor: pointer;
+        transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+      }
+
+      .feature-option:hover {
+        transform: translateY(-1px);
+        border-color: var(--line-strong);
+        box-shadow: 0 12px 24px rgba(72, 64, 50, 0.07);
+      }
+
+      .feature-option input {
+        margin-right: 8px;
+      }
+
+      .feature-option span {
+        display: block;
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .feature-option strong {
+        font-size: 14px;
+      }
+
+      .feature-meta {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+
+      button {
+        appearance: none;
+        border: 0;
+        border-radius: 999px;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+        padding: 11px 16px;
+        transition: transform 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease, background 0.16s ease;
+      }
+
+      button:hover:not(:disabled) {
+        transform: translateY(-1px);
+      }
+
+      button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+
+      .btn-primary {
+        background: var(--accent);
+        color: #fff;
+        box-shadow: 0 12px 30px rgba(15, 118, 110, 0.25);
+      }
+
+      .btn-secondary {
+        background: #fff;
+        color: var(--ink);
+        border: 1px solid var(--line);
+      }
+
+      .btn-warn {
+        background: #fff3e6;
+        color: var(--warn);
+        border: 1px solid #f3c58d;
+      }
+
+      .status-card {
+        display: grid;
+        gap: 12px;
+      }
+
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        width: fit-content;
+        padding: 9px 13px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent-strong);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .status-pill.warn {
+        background: var(--warn-soft);
+        color: var(--warn);
+      }
+
+      .status-pill.error {
+        background: var(--danger-soft);
+        color: var(--danger);
+      }
+
+      .status-text {
+        margin: 0;
+        line-height: 1.7;
+        color: var(--ink);
+        white-space: pre-wrap;
+      }
+
+      .subgrid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 18px;
+      }
+
+      .metric-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .metric-card {
+        padding: 14px 15px;
+        border-radius: 14px;
+        background: linear-gradient(180deg, rgba(15, 118, 110, 0.06), rgba(255, 255, 255, 0.85));
+        border: 1px solid rgba(15, 118, 110, 0.16);
+      }
+
+      .metric-card strong {
+        display: block;
+        font-size: 24px;
+        line-height: 1;
+        margin-top: 6px;
+      }
+
+      .metric-card span {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .list-stack {
+        display: grid;
+        gap: 12px;
+      }
+
+      .round-card {
+        border: 1px solid rgba(220, 207, 184, 0.88);
+        border-radius: 14px;
+        padding: 14px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(249, 244, 235, 0.88));
+      }
+
+      .round-card h4 {
+        margin: 0 0 8px;
+        font-size: 15px;
+      }
+
+      .round-card p {
+        margin: 6px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
+      .qa-card {
+        border: 1px dashed rgba(15, 118, 110, 0.26);
+        border-radius: 14px;
+        padding: 14px;
+        background: rgba(218, 240, 235, 0.38);
+      }
+
+      .qa-card h4 {
+        margin: 0 0 10px;
+      }
+
+      .qa-item {
+        display: grid;
+        gap: 9px;
+        padding: 12px 0;
+        border-top: 1px solid rgba(15, 118, 110, 0.14);
+      }
+
+      .qa-item:first-of-type {
+        border-top: 0;
+        padding-top: 0;
+      }
+
+      .qa-item strong {
+        font-size: 13px;
+      }
+
+      .qa-item p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
+      .qa-item input {
+        width: 100%;
+        border: 1px solid rgba(15, 118, 110, 0.22);
+        border-radius: 10px;
+        padding: 10px 12px;
+        font: inherit;
+      }
+
+      .scroll-box {
+        overflow: auto;
+        border: 1px solid rgba(220, 207, 184, 0.92);
+        border-radius: 14px;
+        background: #fff;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 780px;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid rgba(220, 207, 184, 0.9);
+        padding: 10px 12px;
+        vertical-align: top;
+        text-align: left;
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
+      th {
+        position: sticky;
+        top: 0;
+        background: #faf4ea;
+        z-index: 1;
+      }
+
+      .mono {
+        font-family: "SFMono-Regular", "Menlo", "Monaco", monospace;
+      }
+
+      .render-list,
+      .render-list ul {
+        margin: 0;
+        padding-left: 18px;
+        line-height: 1.7;
+      }
+
+      .render-empty {
+        color: var(--muted);
+        font-style: italic;
+      }
+
+      .doc-frame {
+        width: 100%;
+        min-height: 480px;
+        border: 1px solid rgba(220, 207, 184, 0.92);
+        border-radius: 16px;
+        background: #fff;
+      }
+
+      .activity-log {
+        display: grid;
+        gap: 8px;
+        max-height: 260px;
+        overflow: auto;
+      }
+
+      .log-item {
+        padding: 10px 12px;
+        border-radius: 12px;
+        font-size: 13px;
+        line-height: 1.6;
+        background: rgba(255, 255, 255, 0.86);
+        border: 1px solid rgba(220, 207, 184, 0.88);
+      }
+
+      .log-item.warn {
+        background: var(--warn-soft);
+        border-color: #f2c48f;
+      }
+
+      .log-item.error {
+        background: var(--danger-soft);
+        border-color: #f3b4ac;
+      }
+
+      .json-box {
+        margin: 0;
+        padding: 16px;
+        border-radius: 14px;
+        background: #18212b;
+        color: #dce7f3;
+        overflow: auto;
+        font-size: 12px;
+        line-height: 1.6;
+      }
+
+      .section-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      details {
+        border: 1px solid rgba(220, 207, 184, 0.92);
+        border-radius: 14px;
+        overflow: hidden;
+        background: rgba(255, 255, 255, 0.9);
+      }
+
+      details + details {
+        margin-top: 12px;
+      }
+
+      summary {
+        cursor: pointer;
+        padding: 14px 16px;
+        font-weight: 700;
+        background: rgba(249, 244, 235, 0.84);
+      }
+
+      .summary-body {
+        padding: 16px;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      @media (max-width: 1180px) {
+        .hero,
+        .builder-grid,
+        .subgrid {
+          grid-template-columns: 1fr;
+        }
+
+        .metric-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 760px) {
+        .shell {
+          padding: 16px 12px 42px;
+        }
+
+        .panel-body,
+        .panel-head,
+        .hero-card,
+        .hero-side {
+          padding-left: 16px;
+          padding-right: 16px;
+        }
+
+        .field-grid.cols-2,
+        .field-grid.cols-3,
+        .metric-grid,
+        .option-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .toolbar,
+        .section-actions {
+          flex-direction: column;
+        }
+
+        button {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <section class="hero">
+        <div class="hero-card">
+          <h1>TestFlow Standalone</h1>
+          <p>
+            单文件静态页完成输入需求、三人评审、测试设计稿、HTML 测试设计文档和 Excel 测试用例导出。
+            页面直接调用可配置的 OpenAI 兼容 LLM 接口，不再依赖 Python 后端流程。
+          </p>
+          <div class="hero-strip">
+            <span class="chip">3 轮评审</span>
+            <span class="chip">测试环境约束保留</span>
+            <span class="chip">HTML 文档预览/下载</span>
+            <span class="chip">Excel 多 Sheet 导出</span>
+          </div>
+        </div>
+        <aside class="hero-side">
+          <h2>可行性结论</h2>
+          <ul>
+            <li>当前核心能力本质上是 prompt 编排、结构化 JSON 校验、文档拼装和 Excel 导出，这些都可以在浏览器端完成。</li>
+            <li>新的静态页保留现有测试环境约束规则：优先已勾选环境，必须依赖未勾选环境时仍保留设计并输出风险。</li>
+            <li>三轮评审里的待确认问题、用户确认答案和确认历史会保存在浏览器本地，并进入设计文档和 Excel。</li>
+            <li>页面假设你配置的 LLM 接口支持浏览器跨域访问，以及 OpenAI 兼容的 `chat/completions` 协议。</li>
+          </ul>
+        </aside>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>LLM 配置</h2>
+            <p>页面直接请求浏览器可访问的 OpenAI 兼容接口；配置会保存在本地浏览器。</p>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="field-grid cols-3">
+            <div class="field">
+              <label for="llmBaseUrl">API Base URL</label>
+              <input id="llmBaseUrl" type="text" placeholder="https://api.openai.com/v1" />
+              <p class="hint">默认拼接为 `&lt;baseUrl&gt;/chat/completions`。</p>
+            </div>
+            <div class="field">
+              <label for="llmApiKey">API Key</label>
+              <input id="llmApiKey" type="password" placeholder="sk-..." />
+              <p class="hint">仅保存在当前浏览器 localStorage；请避免在不可信设备中使用。</p>
+            </div>
+            <div class="field">
+              <label for="llmModel">Model</label>
+              <input id="llmModel" type="text" placeholder="gpt-4.1-mini" />
+              <p class="hint">按你的供应商模型名填写。</p>
+            </div>
+          </div>
+          <div class="field-grid cols-3" style="margin-top: 14px">
+            <div class="field">
+              <label for="llmTemperature">Temperature</label>
+              <input id="llmTemperature" type="number" min="0" max="2" step="0.1" />
+            </div>
+            <div class="field">
+              <label for="llmMaxTokens">Max Tokens</label>
+              <input id="llmMaxTokens" type="number" min="512" step="256" />
+            </div>
+            <div class="field">
+              <label for="llmTimeoutMs">Timeout (ms)</label>
+              <input id="llmTimeoutMs" type="number" min="10000" step="1000" />
+            </div>
+          </div>
+          <p class="hint" style="margin-top: 12px">
+            适用前提：目标接口允许浏览器 CORS 调用；如果你直接双击打开 HTML，也要确保供应商接口允许来自 `file://` 或无来源页面的请求。
+          </p>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>输入与约束</h2>
+            <p>需求支持多段输入，推荐用空行分段；产品通信背景和测试环境会进入评审、设计、用例和导出。</p>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="builder-grid">
+            <div class="builder-column">
+              <div class="field">
+                <label for="requirementsInput">需求输入</label>
+                <textarea id="requirementsInput" placeholder="请输入需求原文。多条需求建议用空行分隔。"></textarea>
+                <p class="hint">会进入需求解读、三人评审、测试设计和测试用例整条链路。</p>
+              </div>
+              <div class="field">
+                <label for="ragContextInput">补充上下文 / RAG 摘要</label>
+                <textarea id="ragContextInput" placeholder="可粘贴 3GPP、运营商要求、历史缺陷、认证经验等背景信息。"></textarea>
+              </div>
+            </div>
+
+            <div class="builder-column">
+              <div class="option-group">
+                <h4>产品通信背景与支持特性</h4>
+                <div id="productProfileGroups" class="list-stack"></div>
+              </div>
+              <div class="option-group">
+                <h4>当前可用测试环境</h4>
+                <p class="hint" style="margin-bottom: 12px">
+                  按实际资源勾选。LLM 会优先使用已勾选环境；若场景必须依赖未勾选环境，仍会保留设计并提示资源风险。
+                </p>
+                <div id="testEnvironmentOptions" class="list-stack"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>流程控制</h2>
+            <p>建议先完成 3 轮评审，再生成测试设计和测试用例。所有中间状态会自动保存到本地。</p>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="toolbar">
+            <button id="runRound1Btn" class="btn-primary" type="button">生成评审 Round 1</button>
+            <button id="runNextRoundBtn" class="btn-secondary" type="button">提交回答并进入下一轮</button>
+            <button id="autoReviewBtn" class="btn-secondary" type="button">一键跑完三轮评审</button>
+            <button id="generateDesignBtn" class="btn-primary" type="button">生成测试设计稿</button>
+            <button id="generateCasesBtn" class="btn-primary" type="button">生成测试用例</button>
+            <button id="downloadDesignDocBtn" class="btn-secondary" type="button">下载设计文档 HTML</button>
+            <button id="downloadExcelBtn" class="btn-secondary" type="button">下载 Excel</button>
+            <button id="resetSessionBtn" class="btn-warn" type="button">清空当前会话</button>
+          </div>
+
+          <div class="status-card">
+            <div id="statusPill" class="status-pill">等待开始</div>
+            <p id="statusText" class="status-text">配置 LLM 后，可以从 Round 1 开始。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>进度概览</h2>
+            <p>当前轮次、问题数量、设计目标和用例数量会随着流程实时刷新。</p>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div id="metricGrid" class="metric-grid"></div>
+        </div>
+      </section>
+
+      <section class="subgrid">
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>三轮评审与确认历史</h3>
+              <p>待确认问题、已确认问题和每轮摘要都会在这里保留。</p>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div id="reviewRounds" class="list-stack"></div>
+            <div style="height: 12px"></div>
+            <div class="qa-card">
+              <h4>当前待确认问题</h4>
+              <div id="openQuestionsPanel"></div>
+              <div style="height: 12px"></div>
+              <button id="submitAnswersBtn" class="btn-secondary" type="button">提交回答并进入下一轮</button>
+            </div>
+            <div style="height: 12px"></div>
+            <div id="answeredQuestionsPanel"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>执行日志</h3>
+              <p>浏览器端流水线会把每一步关键动作和告警写在这里，便于排查结构化输出问题。</p>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div id="activityLog" class="activity-log"></div>
+          </div>
+        </section>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>结构化需求与评审过程</h2>
+            <p>这里会显示当前终稿需求、三人评审结果和待跟进问题。</p>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="subgrid">
+            <div>
+              <h3 style="margin-top: 0">测试需求稿</h3>
+              <div id="requirementSummary"></div>
+            </div>
+            <div>
+              <h3 style="margin-top: 0">三人评审</h3>
+              <div id="reviewSummary"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>测试设计稿与 HTML 文档</h2>
+            <p>设计稿保留覆盖矩阵、整合矩阵、测试环境推荐和资源风险；右下方可以直接预览最终 HTML 文档。</p>
+          </div>
+          <div class="section-actions">
+            <button id="openDesignDocBtn" class="btn-secondary" type="button">新窗口打开文档</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div id="designSummary"></div>
+          <div style="height: 16px"></div>
+          <iframe id="designDocFrame" class="doc-frame" title="测试设计文档预览"></iframe>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>测试用例</h2>
+            <p>用例会继承整合矩阵里的推荐测试环境和资源风险，并在 Excel 中带出对应列。</p>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div id="casesSummary"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Raw JSON</h2>
+            <p>保留结构化原始结果，便于追踪 prompt 输出质量。</p>
+          </div>
+        </div>
+        <div class="panel-body">
+          <details>
+            <summary>Requirement Spec</summary>
+            <div class="summary-body"><pre id="rawRequirementJson" class="json-box"></pre></div>
+          </details>
+          <details>
+            <summary>Persona Reviews</summary>
+            <div class="summary-body"><pre id="rawReviewJson" class="json-box"></pre></div>
+          </details>
+          <details>
+            <summary>Requirement Review History</summary>
+            <div class="summary-body"><pre id="rawHistoryJson" class="json-box"></pre></div>
+          </details>
+          <details>
+            <summary>Test Design Spec</summary>
+            <div class="summary-body"><pre id="rawDesignJson" class="json-box"></pre></div>
+          </details>
+          <details>
+            <summary>Test Case Spec</summary>
+            <div class="summary-body"><pre id="rawCaseJson" class="json-box"></pre></div>
+          </details>
+        </div>
+      </section>
+    </div>
+
+    <script>
+      const SESSION_KEY = "testflow_standalone_session_v1";
+      const PROMPT_PREFIX = "[TestFlow Standalone]";
+
+      const PRODUCT_PROFILE_GROUPS = [
+        {
+          key: "network_core_protocols",
+          label: "1. 网络制式与核心协议",
+          options: ["5G NR", "4G LTE", "3G/2G", "NB-IoT / eMTC", "NTN", "IoT-NTN"],
+        },
+        {
+          key: "fiveg_specifics",
+          label: "2. 5G 专属组网与射频特性",
+          options: ["SA", "NSA", "Sub-6GHz (FR1)", "毫米波 mmWave (FR2)", "RedCap", "网络切片", "载波聚合"],
+        },
+        {
+          key: "sim_standby_modes",
+          label: "3. 卡与多待机模式",
+          options: ["单卡", "DSDS", "DSDA", "eSIM"],
+        },
+        {
+          key: "services_data",
+          label: "4. 核心业务与数据能力",
+          options: ["VoNR", "VoLTE", "CSFB", "SMS over NAS / IMS", "IPv4 单栈", "IPv6 单栈", "IPv4/IPv6 双栈 (Dual Stack)"],
+        },
+        {
+          key: "power_mobility",
+          label: "5. 功耗与移动性管理",
+          options: ["PSM", "eDRX", "C-DRX", "高铁模式 / 高速移动优化"],
+        },
+        {
+          key: "special_scenarios",
+          label: "6. 特殊场景与形态特性",
+          options: ["GNSS / LBS", "C-V2X", "Android架构", "Linux架构", "RTOS架构"],
+        },
+        {
+          key: "form_factor",
+          label: "7. 产品定位与形态",
+          options: ["智能手机", "功能手机", "穿戴产品", "通信模组", "车载模组"],
+        },
+      ];
+
+      const TEST_ENVIRONMENT_OPTIONS = [
+        {
+          id: "REAL_NETWORK",
+          label: "实网环境",
+          priority: 1,
+          description: "使用运营商的SIM和网络进行真实网络下的用户操作层面的测试。",
+        },
+        {
+          id: "AMARISOFT",
+          label: "Amarisoft模拟基站",
+          priority: 2,
+          description: "使用Amarisoft模拟基站进行部分基础（PHY/协议L3）的仿真测试。",
+        },
+        {
+          id: "PROTOCOL_ANALYZER",
+          label: "协议分析仪表",
+          priority: 3,
+          description: "使用专业的协议分析仪表，进行协议栈IE配置、协议流程构建等方式测试。",
+        },
+      ];
+
+      const TEST_ENVIRONMENT_CATALOG = Object.fromEntries(
+        TEST_ENVIRONMENT_OPTIONS.map((item) => [item.id, item])
+      );
+
+      const DEFAULT_ACTION_VOCABULARY = [
+        "SET_DEVICE_STATE",
+        "SET_NETWORK_PROFILE",
+        "TRIGGER_ATTACH",
+        "TRIGGER_REGISTRATION",
+        "TRIGGER_CALL",
+        "MOVE_RF_CONDITION",
+        "WAIT",
+        "CHECK",
+        "COLLECT_LOG",
+      ];
+
+      const PERSONA_FALLBACK_CONFIG = {
+        spec: {
+          issue: "需补充状态机条件、定时器、原因码与消息级可观测点。",
+          question: "请确认协议流程中的关键定时器、原因码或消息级观测要求。",
+          rewrite: "请补充可测量的协议条件、前置状态和日志抓取要求。",
+        },
+        carrier: {
+          issue: "需补充运营商验收口径、关键 KPI、配置依赖和必测组合。",
+          question: "请确认运营商侧 KPI 门槛、业务组合和配置依赖。",
+          rewrite: "请补充运营商验收标准、配置组合与通过阈值。",
+        },
+        ux: {
+          issue: "需补充用户体验指标、稳定性、恢复时间和异常后的感知标准。",
+          question: "请确认用户侧成功率、时延、稳定性与恢复预期。",
+          rewrite: "请补充用户感知指标、恢复标准与长稳要求。",
+        },
+      };
+
+      const REQUIREMENT_ITEM_SCHEMA = {
+        type: "object",
+        required: [
+          "req_id",
+          "title",
+          "source",
+          "feature",
+          "rat_scope",
+          "preconditions",
+          "expected",
+          "acceptance",
+          "observability",
+          "priority",
+        ],
+      };
+
+      const REQUIREMENT_LIST_SCHEMA = {
+        type: "array",
+        items: REQUIREMENT_ITEM_SCHEMA,
+      };
+
+      const PERSONA_REVIEW_SCHEMA = {
+        type: "object",
+        required: ["reviews"],
+      };
+
+      const SYNTHESIS_SCHEMA = {
+        type: "object",
+        required: ["final_requirements", "conflicts", "questions_to_ask", "assumptions"],
+      };
+
+      const TEST_DESIGN_SCHEMA = {
+        type: "object",
+        required: ["objectives", "coverage_matrices", "design_notes", "de_scoped"],
+      };
+
+      const INTEGRATED_MATRIX_SCHEMA = {
+        type: "object",
+        required: ["integrated_matrix"],
+      };
+
+      const TESTCASE_SCHEMA = {
+        type: "object",
+        required: ["testcases"],
+      };
+
+      const TEST_OBJECTIVE_REQUIRED_KEYS = [
+        "objective_id",
+        "linked_reqs",
+        "goal",
+        "success_criteria",
+        "evidence",
+        "priority",
+      ];
+
+      const TESTCASE_REQUIRED_KEYS = [
+        "tc_id",
+        "objective_id",
+        "title",
+        "tags",
+        "preconditions",
+        "steps",
+        "expected",
+        "pass_fail",
+        "test_environment",
+        "observability",
+        "trace",
+      ];
+
+      const PROMPTS = {
+        reqParse: {
+          system: `You are a senior cellular modem system test engineer and requirements analyst.
+Your job: convert mixed Chinese/English requirement text into strictly testable atomic requirements.
+Output MUST be valid JSON that conforms to the provided JSON schema. No extra text.
+
+Rules:
+- If acceptance criteria is missing, propose measurable pass/fail as assumptions and add open_questions.
+- If evidence is missing, populate observability.must_capture and add open_questions if uncertain.
+- Do NOT invent spec citations. If evidence text is not provided, keep source.evidence_refs empty.
+- All human-readable natural language inside JSON values must be written in Simplified Chinese. Keep schema keys, IDs, enum values, and structured field names unchanged. 最终以“简体中文”输出。`,
+          user: `glossary: {glossary_json}
+source_doc: {doc_meta_json}
+requirement_text_chunk: {text_chunk}
+rag_context: {rag_context}
+review_feedback_from_previous_rounds: {review_feedback}
+product_profile: {product_profile_json}
+output_schema: {output_schema}`,
+        },
+        reviewSpec: {
+          system: `Role: Spec Lawyer (3GPP/GSMA/GCF strict).
+Task: Review each RequirementItem for missing state-machine conditions, timers, cause codes, message-level observability, and internal consistency.
+Return JSON issues list per req_id.
+All human-readable natural language inside JSON values must be written in Simplified Chinese. Keep schema keys, req_id, and score field names unchanged. 最终以“简体中文”输出。
+
+Scoring rubric:
+- correctness risk if unspecified (0-5)
+- testability gap (0-5)
+- ambiguity level (0-5)`,
+          user: `requirements: {requirements_json}
+return_schema: {return_schema}`,
+        },
+        reviewCarrier: {
+          system: `Role: Carrier Acceptance Reviewer.
+Task: Identify operator-acceptance risks, KPI-style pass/fail, must-test combos, configuration dependencies, and common certification pitfalls.
+Return JSON with acceptance-oriented recommendations.
+Hard quality rules:
+- For EACH req_id, write requirement-specific issues and open_questions. Do not reuse the same generic wording across different req_id.
+- open_questions must be directly answerable by product/test owners, and must ask for concrete missing information such as KPI threshold, operator config combo, fallback trigger, timer, handover interruption budget, BWP/bandwidth combo, roaming behavior, business continuity expectation, or certification pitfall.
+- Avoid vague questions like “请确认运营商侧 KPI 门槛、业务组合和配置依赖” unless the requirement text itself is equally vague.
+- If one requirement is about fallback/reselection and another is about handover or BWP, their open_questions must be different in focus.
+All human-readable natural language inside JSON values must be written in Simplified Chinese. Keep schema keys, req_id, and structured field names unchanged. 最终以“简体中文”输出。`,
+          user: `requirements: {requirements_json}
+history_risk_hints(optional): {history_risk_json}
+return_schema: {return_schema}`,
+        },
+        reviewUx: {
+          system: `Role: Field & UX Advocate.
+Task: Translate requirements into user-perceived metrics: success rate, time to service, stability, recovery, power impact, concurrency robustness.
+Propose red-line scenarios and self-healing expectations.
+Return JSON.
+Hard quality rules:
+- For EACH req_id, write requirement-specific issues and open_questions. Do not reuse the same generic wording across different req_id.
+- open_questions must be directly answerable by product/test owners, and should ask for concrete user-facing expectations such as interruption duration, recovery time, service success rate, call/data continuity, UI prompt expectation, acceptable degradation, weak-signal behavior, or long-stability criteria.
+- Avoid vague questions like “请确认用户侧成功率、时延、稳定性与恢复预期” unless the requirement text itself is equally vague.
+- If one requirement is about fallback/reselection and another is about handover or BWP, their open_questions must be different in focus.
+All human-readable natural language inside JSON values must be written in Simplified Chinese. Keep schema keys, req_id, and structured field names unchanged. 最终以“简体中文”输出。`,
+          user: `requirements: {requirements_json}
+return_schema: {return_schema}`,
+        },
+        synthesis: {
+          system: `You are the Arbiter. Merge three reviews into a single finalized RequirementSpec.
+Rules:
+- Preserve traceability: keep req_id, source, and list which persona raised which issue.
+- If conflicts exist, record conflict and propose a default assumption plus an open question.
+- Output ONLY JSON.
+- All human-readable natural language inside JSON values must be written in Simplified Chinese. Keep schema keys, req_id, source fields, and other structured field names unchanged. 最终以“简体中文”输出。`,
+          user: `requirements: {requirements_json}
+reviews_spec: {reviews_spec_json}
+reviews_carrier: {reviews_carrier_json}
+reviews_ux: {reviews_ux_json}
+return_schema: {return_schema}`,
+        },
+        testDesigner: {
+          system: `You are a cellular modem system test architect.
+Your output must be a cohesive design package, not disconnected sections.
+Output ONLY valid JSON.
+
+Hard requirements:
+1) Preserve traceability from each requirement (REQ) to objective and matrix rows.
+2) Carry KPI / pass-fail metrics from requirements into design success criteria.
+3) Build an integrated coverage matrix table (like a reviewable design sheet), not just a dimension list.
+4) If requirement has acceptance.pass_fail or acceptance.kpi, at least one objective and one matrix row must reference them.
+5) Do not drop critical metric constraints (time window, threshold, latency, stability duration, recovery time).
+6) Respect product_profile from constraints: selected capabilities must be reflected in dimensions/scenarios; explicitly de-scope non-selected capabilities in de_scoped when relevant.
+7) Respect available_test_environments from constraints. Prefer user-selected environments when they are sufficient for the scenario.
+8) If a scenario actually requires an unselected environment, you MUST still design it and surface the gap as a risk/dependency in design_notes or de_scoped; do not silently weaken the scenario.
+9) All human-readable natural language inside JSON values must be written in Simplified Chinese. Keep schema keys, objective_id/req_id, matrix_id/row_id, dimension names, and other structured field names unchanged. 最终以“简体中文”输出。`,
+          user: `final_requirements: {final_requirements_json}
+constraints: {constraints_json}
+return_schema: {return_schema}
+
+You MUST return JSON with these sections:
+{
+  "objectives": [
+    {
+      "objective_id": "TO-...",
+      "linked_reqs": ["REQ-..."],
+      "goal": "...",
+      "success_criteria": ["must contain measurable criteria inherited from requirement acceptance"],
+      "evidence": ["..."],
+      "priority": "P0|P1|P2|P3",
+      "risk_notes": "..."
+    }
+  ],
+  "coverage_matrices": [
+    {
+      "matrix_id": "CM-...",
+      "dimensions": [
+        {"name": "RAT_MODE", "values": ["..."]},
+        {"name": "MOBILITY", "values": ["..."]},
+        {"name": "POWER_SIGNAL", "values": ["..."]},
+        {"name": "CONCURRENCY", "values": ["..."]},
+        {"name": "OPERATOR_PROFILE", "values": ["..."]}
+      ],
+      "sampling_strategy": {
+        "type": "pairwise|risk_based",
+        "must_include": [ {"RAT_MODE": "..."} ],
+        "exclude": [ {"...": "..."} ]
+      }
+    }
+  ],
+  "integrated_matrix": [
+    {
+      "row_id": "ROW-...",
+      "req_id": "REQ-...",
+      "objective_id": "TO-...",
+      "scenario": "concrete test scenario",
+      "key_configuration": {
+        "RAT": "...",
+        "Mobility": "...",
+        "SignalOrPower": "...",
+        "Concurrency": "...",
+        "Operator": "..."
+      },
+      "pass_criteria": ["must be measurable and traceable to requirement acceptance/kpi"],
+      "test_environment": {
+        "primary": "REAL_NETWORK|AMARISOFT|PROTOCOL_ANALYZER",
+        "alternatives": ["..."],
+        "rationale": "...",
+        "availability_risk": "..."
+      }
+    }
+  ],
+  "req_to_objective_map": [
+    {
+      "req_id": "REQ-...",
+      "objective_ids": ["TO-..."],
+      "covered_metrics": ["..."],
+      "missing_metrics": ["..."]
+    }
+  ],
+  "design_notes": ["..."],
+  "de_scoped": ["..."]
+}
+
+Quality gates before you answer:
+- No requirement is left without objective mapping.
+- No objective is left without integrated_matrix rows.
+- If any metric cannot be covered, put it in req_to_objective_map.missing_metrics and explain in design_notes.
+- If any row requires an environment not selected by user, keep the row and state the environment gap explicitly.`,
+        },
+        integratedMatrix: {
+          system: `You are generating an integrated coverage matrix for modem system testing.
+This is a second-pass synthesis step.
+Output ONLY valid JSON.
+
+Rules:
+1) Scenario must be concrete and selected from/compatible with coverage dimensions, not a copy of objective text.
+2) key_configuration must explicitly pick values (RAT/Mobility/SignalOrPower/Concurrency/Operator when available).
+3) pass_criteria must include measurable metrics inherited from requirement acceptance/kpi (e.g. 2s, 95%, 30s, dBm thresholds).
+4) Each objective must have >=1 matrix row. Each req_id must appear in integrated_matrix.
+5) For each row, choose a recommended test_environment.primary from REAL_NETWORK / AMARISOFT / PROTOCOL_ANALYZER.
+6) Prioritize user-selected available_test_environments when they are sufficient.
+7) If a scenario must rely on an environment not selected by the user, still keep the row and explain the gap in test_environment.availability_risk.
+8) All human-readable natural language inside JSON values must be written in Simplified Chinese. Keep schema keys, row_id/req_id/objective_id, key_configuration dimension keys, and test_environment.primary IDs unchanged. 最终以“简体中文”输出。`,
+          user: `final_requirements: {final_requirements_json}
+objectives: {objectives_json}
+coverage_matrices: {coverage_matrices_json}
+available_test_environments: {available_test_environments_json}
+output_schema: {output_schema}
+
+Return JSON format:
+{
+  "integrated_matrix": [
+    {
+      "row_id": "ROW-...",
+      "req_id": "REQ-...",
+      "objective_id": "TO-...",
+      "scenario": "...",
+      "key_configuration": {
+        "RAT": "...",
+        "Mobility": "...",
+        "SignalOrPower": "...",
+        "Concurrency": "...",
+        "Operator": "..."
+      },
+      "pass_criteria": ["..."],
+      "test_environment": {
+        "primary": "REAL_NETWORK|AMARISOFT|PROTOCOL_ANALYZER",
+        "alternatives": ["..."],
+        "rationale": "...",
+        "availability_risk": "..."
+      }
+    }
+  ]
+}`,
+        },
+        testCaseGenerator: {
+          system: `You are a senior automation test-case designer.
+Generate TestCaseSpec JSON only.
+
+Hard constraints:
+1) Use integrated_matrix as PRIMARY source. Do not copy objective text as scenario blindly.
+2) For each integrated_matrix row, create at least one testcase.
+3) Perform parameter decomposition from key_configuration into executable step params.
+4) Preserve numeric thresholds and KPI values exactly in pass_fail (e.g. 2s, 95%, -115dBm, 30s). Do not weaken or paraphrase away numbers.
+5) Steps must use ONLY actions from action_vocabulary.
+6) Include trace to req_id and row_id for each testcase.
+7) Each testcase MUST include test_environment, inherited from the corresponding integrated_matrix row. Do not omit it.
+8) Keep test_environment.primary unchanged if the integrated_matrix row already selected one. If the environment is unavailable, keep it and preserve the risk note.
+9) All human-readable natural language inside JSON values must be written in Simplified Chinese. Keep schema keys, tc_id/objective_id, action names, trace field names, action_vocabulary tokens, and test_environment.primary IDs unchanged. 最终以“简体中文”输出。
+
+Output format:
+{
+  "testcases": [
+    {
+      "tc_id": "TC-...",
+      "objective_id": "TO-...",
+      "title": "...",
+      "tags": ["..."],
+      "preconditions": ["..."],
+      "steps": [
+        {"action": "SET_NETWORK_PROFILE", "params": {...}},
+        {"action": "TRIGGER_REGISTRATION", "params": {...}},
+        {"action": "WAIT", "params": {...}},
+        {"action": "CHECK", "params": {...}},
+        {"action": "COLLECT_LOG", "params": {...}}
+      ],
+      "expected": ["..."],
+      "pass_fail": ["must include numeric criteria from integrated_matrix.pass_criteria"],
+      "test_environment": {
+        "primary": "REAL_NETWORK|AMARISOFT|PROTOCOL_ANALYZER",
+        "alternatives": ["..."],
+        "rationale": "...",
+        "availability_risk": "..."
+      },
+      "observability": {"must_capture": ["..."], "assertions": ["..."]},
+      "failure_taxonomy": [{"code": "...", "signals": ["..."], "likely_owner": "..."}],
+      "trace": {"req_ids": ["REQ-..."], "source_refs": ["ROW-..."]}
+    }
+  ]
+}`,
+          user: `integrated_matrix: {integrated_matrix_json}
+objectives: {objectives_json}
+coverage_context: {coverage_json}
+action_vocabulary: {action_vocabulary_json}
+return_schema: {return_schema}`,
+        },
+      };
+
+      const state = {
+        llm: {
+          baseUrl: "https://api.openai.com/v1",
+          apiKey: "",
+          model: "",
+          temperature: 0.2,
+          maxTokens: 6000,
+          timeoutMs: 180000,
+        },
+        round: 0,
+        currentOpenQuestions: [],
+        requirementSpec: null,
+        personaReviews: null,
+        requirementReviewHistory: { rounds: [], answered_questions: [], answered_count: 0 },
+        testDesignSpec: null,
+        testCaseSpec: null,
+        designDocUrl: "",
+        busy: false,
+      };
+
+      const els = {
+        llmBaseUrl: document.getElementById("llmBaseUrl"),
+        llmApiKey: document.getElementById("llmApiKey"),
+        llmModel: document.getElementById("llmModel"),
+        llmTemperature: document.getElementById("llmTemperature"),
+        llmMaxTokens: document.getElementById("llmMaxTokens"),
+        llmTimeoutMs: document.getElementById("llmTimeoutMs"),
+        requirementsInput: document.getElementById("requirementsInput"),
+        ragContextInput: document.getElementById("ragContextInput"),
+        productProfileGroups: document.getElementById("productProfileGroups"),
+        testEnvironmentOptions: document.getElementById("testEnvironmentOptions"),
+        runRound1Btn: document.getElementById("runRound1Btn"),
+        runNextRoundBtn: document.getElementById("runNextRoundBtn"),
+        submitAnswersBtn: document.getElementById("submitAnswersBtn"),
+        autoReviewBtn: document.getElementById("autoReviewBtn"),
+        generateDesignBtn: document.getElementById("generateDesignBtn"),
+        generateCasesBtn: document.getElementById("generateCasesBtn"),
+        downloadDesignDocBtn: document.getElementById("downloadDesignDocBtn"),
+        openDesignDocBtn: document.getElementById("openDesignDocBtn"),
+        downloadExcelBtn: document.getElementById("downloadExcelBtn"),
+        resetSessionBtn: document.getElementById("resetSessionBtn"),
+        statusPill: document.getElementById("statusPill"),
+        statusText: document.getElementById("statusText"),
+        metricGrid: document.getElementById("metricGrid"),
+        reviewRounds: document.getElementById("reviewRounds"),
+        openQuestionsPanel: document.getElementById("openQuestionsPanel"),
+        answeredQuestionsPanel: document.getElementById("answeredQuestionsPanel"),
+        activityLog: document.getElementById("activityLog"),
+        requirementSummary: document.getElementById("requirementSummary"),
+        reviewSummary: document.getElementById("reviewSummary"),
+        designSummary: document.getElementById("designSummary"),
+        designDocFrame: document.getElementById("designDocFrame"),
+        casesSummary: document.getElementById("casesSummary"),
+        rawRequirementJson: document.getElementById("rawRequirementJson"),
+        rawReviewJson: document.getElementById("rawReviewJson"),
+        rawHistoryJson: document.getElementById("rawHistoryJson"),
+        rawDesignJson: document.getElementById("rawDesignJson"),
+        rawCaseJson: document.getElementById("rawCaseJson"),
+      };
+
+      function esc(value) {
+        return String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;");
+      }
+
+      function normalizeLooseText(value) {
+        if (value == null) return "";
+        if (typeof value === "string") return value.trim();
+        if (typeof value === "number" || typeof value === "boolean") return String(value);
+        if (Array.isArray(value)) {
+          return normalizeLooseStringList(value).join("；");
+        }
+        if (typeof value === "object") {
+          const preferredKeys = ["question", "issue", "text", "content", "description", "detail", "reason", "suggestion", "value", "title", "name", "label"];
+          const parts = preferredKeys
+            .map((key) => normalizeLooseText(value[key]))
+            .filter(Boolean);
+          if (parts.length) return parts.join(" - ");
+          try {
+            return JSON.stringify(value, null, 0);
+          } catch (error) {
+            return String(value);
+          }
+        }
+        return String(value).trim();
+      }
+
+      function normalizeLooseStringList(value) {
+        if (Array.isArray(value)) {
+          return value.flatMap((item) => {
+            if (Array.isArray(item)) return normalizeLooseStringList(item);
+            const text = normalizeLooseText(item);
+            return text ? [text] : [];
+          });
+        }
+        const text = normalizeLooseText(value);
+        return text ? [text] : [];
+      }
+
+      function canonicalizeReqId(value, requirements = [], fallbackIndex = 0) {
+        const text = normalizeLooseText(value);
+        const reqIds = (requirements || []).map((item) => normalizeLooseText(item?.req_id || "")).filter(Boolean);
+        const upper = text.toUpperCase();
+        const exact = reqIds.find((reqId) => reqId.toUpperCase() === upper);
+        if (exact) return exact;
+        const extracted = upper.match(/REQ-\d+/);
+        if (extracted) {
+          const extractedId = extracted[0];
+          const known = reqIds.find((reqId) => reqId.toUpperCase() === extractedId);
+          return known || extractedId;
+        }
+        return reqIds[fallbackIndex] || reqIds[0] || text || `REQ-${String(fallbackIndex + 1).padStart(3, "0")}`;
+      }
+
+      function xmlEsc(value) {
+        return String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&apos;");
+      }
+
+      function clone(value) {
+        return JSON.parse(JSON.stringify(value));
+      }
+
+      function nowText() {
+        return new Date().toLocaleString("zh-CN", { hour12: false });
+      }
+
+      function setBusy(busy) {
+        state.busy = !!busy;
+        [
+          els.runRound1Btn,
+          els.runNextRoundBtn,
+          els.submitAnswersBtn,
+          els.autoReviewBtn,
+          els.generateDesignBtn,
+          els.generateCasesBtn,
+          els.downloadDesignDocBtn,
+          els.downloadExcelBtn,
+          els.openDesignDocBtn,
+          els.resetSessionBtn,
+        ].forEach((btn) => {
+          if (btn) btn.disabled = !!busy;
+        });
+        renderMetrics();
+      }
+
+      function setStatus(text, tone = "normal") {
+        els.statusText.textContent = text;
+        els.statusPill.className = "status-pill" + (tone === "warn" ? " warn" : tone === "error" ? " error" : "");
+        if (tone === "warn") {
+          els.statusPill.textContent = "需关注";
+        } else if (tone === "error") {
+          els.statusPill.textContent = "执行失败";
+        } else if (state.busy) {
+          els.statusPill.textContent = "处理中";
+        } else {
+          els.statusPill.textContent = "流程可继续";
+        }
+      }
+
+      function logActivity(message, tone = "info") {
+        const item = document.createElement("div");
+        item.className = "log-item" + (tone === "warn" ? " warn" : tone === "error" ? " error" : "");
+        item.innerHTML = `<strong>${esc(nowText())}</strong><div>${esc(message)}</div>`;
+        els.activityLog.prepend(item);
+        while (els.activityLog.children.length > 60) {
+          els.activityLog.removeChild(els.activityLog.lastChild);
+        }
+      }
+
+      function toProfileOptionId(groupKey, option) {
+        return `pp_${groupKey}_${String(option).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")}`;
+      }
+
+      function renderProductProfileOptions() {
+        els.productProfileGroups.innerHTML = PRODUCT_PROFILE_GROUPS.map((group) => {
+          const options = group.options
+            .map((option) => {
+              const id = toProfileOptionId(group.key, option);
+              return `<label class="feature-option"><div><input type="checkbox" id="${id}" data-profile-group="${esc(group.key)}" data-profile-option="${esc(option)}" /> <strong>${esc(option)}</strong></div></label>`;
+            })
+            .join("");
+          return `<section class="option-group"><h4>${esc(group.label)}</h4><div class="option-grid">${options}</div></section>`;
+        }).join("");
+      }
+
+      function getSelectedProductProfile() {
+        const selected = {};
+        const selectedFlat = [];
+        PRODUCT_PROFILE_GROUPS.forEach((group) => {
+          const values = [];
+          group.options.forEach((option) => {
+            const el = document.getElementById(toProfileOptionId(group.key, option));
+            if (el && el.checked) {
+              values.push(option);
+              selectedFlat.push(option);
+            }
+          });
+          if (values.length) {
+            selected[group.key] = values;
+          }
+        });
+        return {
+          selected,
+          selected_flat: selectedFlat,
+          selected_count: selectedFlat.length,
+          selected_groups: Object.keys(selected).length,
+          profile_display: PRODUCT_PROFILE_GROUPS.filter((group) => selected[group.key]?.length).map((group) => ({
+            group: group.label,
+            values: selected[group.key],
+          })),
+        };
+      }
+
+      function setSelectedProductProfile(selectedMap = {}) {
+        PRODUCT_PROFILE_GROUPS.forEach((group) => {
+          const values = Array.isArray(selectedMap[group.key]) ? selectedMap[group.key] : [];
+          group.options.forEach((option) => {
+            const el = document.getElementById(toProfileOptionId(group.key, option));
+            if (el) {
+              el.checked = values.includes(option);
+            }
+          });
+        });
+      }
+
+      function renderTestEnvironmentOptions() {
+        els.testEnvironmentOptions.innerHTML = TEST_ENVIRONMENT_OPTIONS.map((env) => {
+          const id = `te_${env.id.toLowerCase()}`;
+          return `<label class="feature-option">
+            <div><input type="checkbox" id="${id}" data-test-env-id="${esc(env.id)}" /> <strong>${esc(env.priority)}. ${esc(env.label)}</strong></div>
+            <span class="feature-meta">${esc(env.description)}</span>
+          </label>`;
+        }).join("");
+      }
+
+      function getSelectedTestEnvironments() {
+        const selectedIds = [];
+        const selectedDetails = [];
+        TEST_ENVIRONMENT_OPTIONS.forEach((env) => {
+          const el = document.getElementById(`te_${env.id.toLowerCase()}`);
+          if (el && el.checked) {
+            selectedIds.push(env.id);
+            selectedDetails.push(clone(env));
+          }
+        });
+        return {
+          selected_ids: selectedIds,
+          selected_count: selectedIds.length,
+          selected_details: selectedDetails,
+          display: selectedDetails.map((env) => `${env.priority}. ${env.label}: ${env.description}`),
+        };
+      }
+
+      function setSelectedTestEnvironments(selectedIds = []) {
+        const set = new Set(Array.isArray(selectedIds) ? selectedIds.map((item) => String(item)) : []);
+        TEST_ENVIRONMENT_OPTIONS.forEach((env) => {
+          const el = document.getElementById(`te_${env.id.toLowerCase()}`);
+          if (el) {
+            el.checked = set.has(env.id);
+          }
+        });
+      }
+
+      function parseRequirements(text) {
+        const raw = String(text || "").trim();
+        if (!raw) return [];
+        const blocks = raw.split(/\n\s*\n/g).map((item) => item.trim()).filter(Boolean);
+        return blocks.length ? blocks : [raw];
+      }
+
+      function _safeJsonText(value) {
+        try {
+          return JSON.stringify(value, null, 2);
+        } catch (error) {
+          return String(value ?? "");
+        }
+      }
+
+      function fillTemplate(template, variables) {
+        let output = String(template || "");
+        Object.entries(variables || {}).forEach(([key, value]) => {
+          output = output.replaceAll(`{${key}}`, String(value ?? ""));
+        });
+        return output;
+      }
+
+      function saveSession() {
+        const payload = {
+          llm: { ...state.llm },
+          form: {
+            requirementsInput: els.requirementsInput.value,
+            ragContextInput: els.ragContextInput.value,
+            productProfile: getSelectedProductProfile().selected,
+            testEnvironments: getSelectedTestEnvironments().selected_ids,
+          },
+          workflow: {
+            round: state.round,
+            currentOpenQuestions: state.currentOpenQuestions,
+            requirementSpec: state.requirementSpec,
+            personaReviews: state.personaReviews,
+            requirementReviewHistory: state.requirementReviewHistory,
+            testDesignSpec: state.testDesignSpec,
+            testCaseSpec: state.testCaseSpec,
+          },
+        };
+        localStorage.setItem(SESSION_KEY, JSON.stringify(payload));
+      }
+
+      function loadSession() {
+        try {
+          const raw = localStorage.getItem(SESSION_KEY);
+          if (!raw) return;
+          const data = JSON.parse(raw);
+          state.llm = { ...state.llm, ...(data.llm || {}) };
+          els.requirementsInput.value = data.form?.requirementsInput || "";
+          els.ragContextInput.value = data.form?.ragContextInput || "";
+          setSelectedProductProfile(data.form?.productProfile || {});
+          setSelectedTestEnvironments(data.form?.testEnvironments || []);
+          state.round = Number(data.workflow?.round || 0);
+          state.currentOpenQuestions = Array.isArray(data.workflow?.currentOpenQuestions) ? data.workflow.currentOpenQuestions : [];
+          state.requirementSpec = data.workflow?.requirementSpec || null;
+          state.personaReviews = data.workflow?.personaReviews ? normalizePersonaReviews(data.workflow.personaReviews, data.workflow?.requirementSpec?.final_requirements || []) : null;
+          state.requirementReviewHistory = data.workflow?.requirementReviewHistory || { rounds: [], answered_questions: [], answered_count: 0 };
+          state.testDesignSpec = data.workflow?.testDesignSpec || null;
+          state.testCaseSpec = data.workflow?.testCaseSpec || null;
+        } catch (error) {
+          console.warn(`${PROMPT_PREFIX} session load failed`, error);
+        }
+      }
+
+      function syncLlmConfigToInputs() {
+        els.llmBaseUrl.value = state.llm.baseUrl || "";
+        els.llmApiKey.value = state.llm.apiKey || "";
+        els.llmModel.value = state.llm.model || "";
+        els.llmTemperature.value = String(state.llm.temperature ?? 0.2);
+        els.llmMaxTokens.value = String(state.llm.maxTokens ?? 6000);
+        els.llmTimeoutMs.value = String(state.llm.timeoutMs ?? 180000);
+      }
+
+      function syncInputsToLlmConfig() {
+        state.llm.baseUrl = String(els.llmBaseUrl.value || "").trim() || "https://api.openai.com/v1";
+        state.llm.apiKey = String(els.llmApiKey.value || "").trim();
+        state.llm.model = String(els.llmModel.value || "").trim();
+        state.llm.temperature = Number(els.llmTemperature.value || 0.2);
+        state.llm.maxTokens = Number(els.llmMaxTokens.value || 6000);
+        state.llm.timeoutMs = Number(els.llmTimeoutMs.value || 180000);
+      }
+
+      function revokeDesignDocUrl() {
+        if (state.designDocUrl) {
+          URL.revokeObjectURL(state.designDocUrl);
+          state.designDocUrl = "";
+        }
+      }
+
+      function resetDownstream({ clearReview = false, clearDesign = false, clearCases = false } = {}) {
+        if (clearReview) {
+          state.round = 0;
+          state.currentOpenQuestions = [];
+          state.requirementSpec = null;
+          state.personaReviews = null;
+          state.requirementReviewHistory = { rounds: [], answered_questions: [], answered_count: 0 };
+        }
+        if (clearDesign || clearReview) {
+          state.testDesignSpec = null;
+          revokeDesignDocUrl();
+        }
+        if (clearCases || clearDesign || clearReview) {
+          state.testCaseSpec = null;
+        }
+      }
+
+      function getRagContext() {
+        return String(els.ragContextInput.value || "").trim();
+      }
+
+      function buildSeedRequirements(inputRequirements, productProfile) {
+        const selectedFlat = productProfile.selected_flat || [];
+        const ratScope = [];
+        if (selectedFlat.includes("5G NR")) ratScope.push("5G");
+        if (selectedFlat.includes("4G LTE")) ratScope.push("4G");
+        if (selectedFlat.includes("3G/2G")) ratScope.push("3G", "2G");
+        if (selectedFlat.includes("VoLTE") || selectedFlat.includes("VoNR") || selectedFlat.includes("SMS over NAS / IMS")) ratScope.push("IMS");
+        if (selectedFlat.includes("PSM") || selectedFlat.includes("eDRX") || selectedFlat.includes("C-DRX")) ratScope.push("POWER");
+        const normalizedRatScope = Array.from(new Set(ratScope.length ? ratScope : ["5G", "IMS"]));
+
+        return inputRequirements.map((text, index) => ({
+          req_id: `REQ-${String(index + 1).padStart(3, "0")}`,
+          title: text,
+          source: {
+            type: "PRD",
+            doc_id: "USER_INPUT",
+            section: "N/A",
+            lang: "mixed",
+            evidence_refs: [],
+          },
+          feature: "MODEM_SYSTEM",
+          rat_scope: normalizedRatScope,
+          preconditions: ["待补充"],
+          trigger: ["待补充"],
+          expected: ["待补充"],
+          acceptance: { pass_fail: ["待补充"], kpi: [] },
+          constraints: [],
+          observability: {
+            signals: [],
+            logs: ["modem_log", "logcat"],
+            counters: [],
+            must_capture: ["modem_log", "logcat"],
+          },
+          priority: "P1",
+          open_questions: [],
+          assumptions: [],
+        }));
+      }
+
+      function validateRequiredKeys(item, requiredKeys, label) {
+        if (!item || typeof item !== "object") {
+          throw new Error(`${label} 不是对象`);
+        }
+        requiredKeys.forEach((key) => {
+          if (!(key in item)) {
+            throw new Error(`${label} 缺少字段 ${key}`);
+          }
+        });
+      }
+
+      function validateRequirementList(data) {
+        if (!Array.isArray(data) || !data.length) {
+          throw new Error("requirements 必须是非空数组");
+        }
+        data.forEach((item, index) => validateRequiredKeys(item, REQUIREMENT_ITEM_SCHEMA.required, `Requirement[${index}]`));
+      }
+
+      function validatePersonaReview(data, label) {
+        validateRequiredKeys(data, PERSONA_REVIEW_SCHEMA.required, label);
+        if (!Array.isArray(data.reviews)) {
+          throw new Error(`${label}.reviews 必须是数组`);
+        }
+      }
+
+      function normalizePersonaReviewData(data, requirements = []) {
+        const fallbackReqIds = (requirements || []).map((item) => String(item?.req_id || "")).filter(Boolean);
+        const rawReviews = Array.isArray(data?.reviews)
+          ? data.reviews
+          : Array.isArray(data)
+            ? data
+            : Array.isArray(data?.items)
+              ? data.items
+              : [];
+        const reviews = rawReviews
+          .filter((item) => item && typeof item === "object")
+          .map((item, index) => {
+            const reqId = canonicalizeReqId(item.req_id || item.requirement_id || item.requirement || fallbackReqIds[index] || fallbackReqIds[0], requirements, index);
+            return {
+              req_id: reqId,
+              issues: normalizeLooseStringList(item.issues || item.findings || item.risks),
+              rewrite_suggestion: normalizeLooseText(item.rewrite_suggestion || item.rewrite || item.suggestion || item.recommendation),
+              scores: item.scores && typeof item.scores === "object" ? item.scores : {},
+              must_observe: normalizeLooseStringList(item.must_observe || item.must_capture || item.observability),
+              open_questions: normalizeLooseStringList(item.open_questions || item.questions || item.follow_ups || item.followups),
+            };
+          });
+        return { reviews };
+      }
+
+      function buildRequirementReviewContext(req) {
+        const parts = [
+          req?.title,
+          ...(req?.preconditions || []),
+          ...(req?.trigger || []),
+          ...(req?.expected || []),
+          ...((req?.acceptance || {}).pass_fail || []),
+          ...((req?.acceptance || {}).kpi || []),
+          ...(req?.constraints || []),
+        ];
+        return normalizeLooseStringList(parts).join(" ").toLowerCase();
+      }
+
+      function hasAnyKeyword(text, keywords = []) {
+        return keywords.some((keyword) => text.includes(String(keyword).toLowerCase()));
+      }
+
+      function buildHeuristicPersonaReview(personaKey, req = {}, index = 0) {
+        const reqId = normalizeLooseText(req?.req_id || `REQ-${String(index + 1).padStart(3, "0")}`);
+        const title = normalizeLooseText(req?.title || `需求${index + 1}`);
+        const context = buildRequirementReviewContext(req);
+        const mustObserve = normalizeLooseStringList(req?.observability?.must_capture || req?.observability?.logs || []);
+
+        const isFallback = hasAnyKeyword(context, ["回落", "fallback", "回退", "降级", "接入拒绝", "拒绝原因"]);
+        const isReselection = hasAnyKeyword(context, ["重选", "reselection", "idle", "inactive", "驻留", "oos", "小区选择"]);
+        const isHandover = hasAnyKeyword(context, ["切换", "handover", "handoff", "ho ", "重建", "reconfiguration", "业务连续性"]);
+        const isBandwidth = hasAnyKeyword(context, ["带宽", "bandwidth", "bwp", "20mhz", "20 mhz", "吞吐"]);
+        const isFallbackWithReselection = isFallback && isReselection;
+
+        let issue = "";
+        let question = "";
+        let rewrite = "";
+
+        if (personaKey === "carrier") {
+          if (isBandwidth) {
+            issue = `“${title}”缺少运营商带宽/BWP 配置验收组合，需要明确频段、初始BWP、切换BWP、吞吐上限与异常配置下的验收口径。`;
+            question = "请确认运营商侧需要验证哪些频段/BWP 组合，以及对应吞吐上限、能力限制和异常配置处理标准。";
+            rewrite = "请补充运营商频段/BWP 配置组合、吞吐限制、能力上报校验和异常配置下的处理要求。";
+          } else if (isHandover) {
+            issue = `“${title}”缺少运营商切换验收口径，需要明确目标小区配置组合、切换成功率、中断时延和失败回退路径。`;
+            question = "请确认运营商验收时要覆盖哪些切换目标配置、切换成功率门槛、业务中断时长和失败回退路径。";
+            rewrite = "请补充切换成功率、业务中断时长、失败回退路径和目标小区配置组合。";
+          } else if (isFallbackWithReselection) {
+            issue = `“${title}”同时涉及能力回落与空闲态驻留/重选限制，缺少运营商侧联合验收口径，需要明确接入拒绝、回落后驻留策略、邻区优先级和恢复 KPI。`;
+            question = "请确认运营商验收时要覆盖哪些回落触发条件、驻留/重选参数、邻区优先级和恢复时延门槛。";
+            rewrite = "请补充回落触发条件、驻留/重选参数组合、邻区优先级以及恢复成功率/时延验收标准。";
+          } else if (isFallback) {
+            issue = `“${title}”缺少运营商侧能力回落验收组合，需要明确不同小区能力广播、接入拒绝和回落后的业务保持 KPI。`;
+            question = "请确认运营商验收时要覆盖哪些 RedCap/标准NR 组合、拒绝场景和回落成功率门槛。";
+            rewrite = "请补充运营商配置组合、回落成功率/时延门槛，以及回落后业务连续性验收标准。";
+          } else if (isReselection) {
+            issue = `“${title}”缺少运营商侧重选策略约束，需要明确邻区优先级、SIB参数组合和异常弱覆盖下的验收口径。`;
+            question = "请确认运营商验收要绑定哪些重选参数、邻区优先级和弱覆盖恢复阈值。";
+            rewrite = "请补充运营商重选参数组合、弱覆盖恢复门槛以及驻留稳定性验收标准。";
+          } else {
+            issue = `“${title}”缺少运营商验收口径、关键 KPI、配置依赖和必测组合。`;
+            question = "请确认运营商侧 KPI 门槛、业务组合和配置依赖。";
+            rewrite = "请补充运营商验收标准、配置组合与通过阈值。";
+          }
+        } else if (personaKey === "ux") {
+          if (isBandwidth) {
+            issue = `“${title}”缺少用户体验侧带宽限制影响评估，需要明确限带宽后的业务流畅性、速率下限、卡顿表现和异常提示。`;
+            question = "请确认用户侧对限带宽后的速率下限、业务流畅性、卡顿表现和异常提示预期。";
+            rewrite = "请补充限带宽场景下的速率体验、流畅性、卡顿表现和异常提示标准。";
+          } else if (isHandover) {
+            issue = `“${title}”缺少用户体验侧切换指标，需要明确切换过程中的业务中断、卡顿、音视频连续性和恢复时间要求。`;
+            question = "请确认用户侧切换过程中可接受的业务中断时长、卡顿表现和恢复时间。";
+            rewrite = "请补充切换中断时长、恢复时间、音视频连续性和业务连续性感知标准。";
+          } else if (isFallbackWithReselection) {
+            issue = `“${title}”同时涉及能力回落与驻留/重选限制，缺少用户感知侧联合指标，需要明确无服务时长、恢复时长、异常提示和回落后的体验一致性。`;
+            question = "请确认用户侧对回落并伴随驻留/重选限制时，可接受的无服务时长、恢复时长和提示预期。";
+            rewrite = "请补充回落与驻留/重选受限场景下的无服务时长、恢复时间和用户感知异常标准。";
+          } else if (isFallback) {
+            issue = `“${title}”缺少用户感知侧回落指标，需要明确回落时业务中断时长、恢复成功率和回落后的体验一致性。`;
+            question = "请确认用户侧对回落时延、业务恢复和体验一致性的预期。";
+            rewrite = "请补充回落期间的服务中断时长、恢复成功率和用户可感知异常标准。";
+          } else if (isReselection) {
+            issue = `“${title}”缺少用户体验侧驻留/重选指标，需要明确无服务时长、恢复时长和重选期间的业务感知。`;
+            question = "请确认用户侧可接受的无服务时长、恢复时长和弱覆盖提示标准。";
+            rewrite = "请补充驻留稳定性、重选恢复时间和用户感知异常提示要求。";
+          } else {
+            issue = `“${title}”缺少用户体验指标、稳定性、恢复时间和异常后的感知标准。`;
+            question = "请确认用户侧成功率、时延、稳定性与恢复预期。";
+            rewrite = "请补充用户感知指标、恢复标准与长稳要求。";
+          }
+        } else {
+          if (isBandwidth) {
+            issue = `“${title}”缺少带宽/BWP 约束下的协议处理和底层可观测点定义。`;
+            question = "请确认超过带宽限制时的协议处理、错误路径和底层观测要求。";
+            rewrite = "请补充带宽/BWP 约束下的协议行为、异常路径和日志要求。";
+          } else if (isHandover) {
+            issue = `“${title}”缺少切换失败回退路径、定时器和消息级可观测点定义。`;
+            question = "请确认切换失败后的定时器、重建路径和协议消息观测要求。";
+            rewrite = "请补充切换/重建流程、定时器和消息级日志要求。";
+          } else if (isFallbackWithReselection) {
+            issue = `“${title}”同时涉及回落与驻留/重选限制，缺少状态转换条件、定时器和消息级观测点定义。`;
+            question = "请确认回落与驻留/重选受限时的状态转换条件、定时器以及消息级观测要求。";
+            rewrite = "请补充回落与驻留/重选限制场景下的状态机、定时器和日志抓取要求。";
+          } else if (isFallback) {
+            issue = `“${title}”缺少回落触发条件、协议分支和消息级观测点定义。`;
+            question = "请确认回落触发条件、原因码和回落后能力上报的协议要求。";
+            rewrite = "请补充回落触发条件、消息交互、定时器和日志抓取要求。";
+          } else if (isReselection) {
+            issue = `“${title}”缺少重选判据、状态约束和消息级可观测点。`;
+            question = "请确认重选触发门槛、状态范围以及OOS后的协议流程要求。";
+            rewrite = "请补充重选门槛、状态机约束和协议侧可观测点。";
+          } else {
+            issue = `“${title}”需补充状态机条件、定时器、原因码与消息级可观测点。`;
+            question = "请确认协议流程中的关键定时器、原因码或消息级观测要求。";
+            rewrite = "请补充可测量的协议条件、前置状态和日志抓取要求。";
+          }
+        }
+
+        return {
+          req_id: reqId,
+          issues: [issue],
+          rewrite_suggestion: rewrite,
+          scores: {},
+          must_observe: mustObserve,
+          open_questions: [question],
+        };
+      }
+
+      function buildPersonaFallbackReviews(personaKey, requirements = []) {
+        return {
+          reviews: (requirements || []).map((req, index) => buildHeuristicPersonaReview(personaKey, req, index)),
+        };
+      }
+
+      function isGenericPersonaReview(review, personaKey = "spec") {
+        const fallback = PERSONA_FALLBACK_CONFIG[personaKey] || PERSONA_FALLBACK_CONFIG.spec;
+        const issues = normalizeLooseStringList(review?.issues || []);
+        const questions = normalizeLooseStringList(review?.open_questions || []);
+        const rewrite = normalizeLooseText(review?.rewrite_suggestion || "");
+        const issueGeneric = !issues.length || issues.every((item) => item === fallback.issue);
+        const questionGeneric = !questions.length || questions.every((item) => item === fallback.question);
+        const rewriteGeneric = !rewrite || rewrite === fallback.rewrite;
+        return issueGeneric && questionGeneric && rewriteGeneric;
+      }
+
+      function ensurePersonaCoverageForAllRequirements(normalizedData, requirements = [], personaKey = "spec") {
+        const reqIds = (requirements || []).map((item) => normalizeLooseText(item?.req_id || "")).filter(Boolean);
+        const reqMap = new Map((requirements || []).map((item) => [normalizeLooseText(item?.req_id || ""), item]));
+        const reviewMap = new Map();
+
+        (normalizedData?.reviews || []).forEach((review, index) => {
+          const reqId = canonicalizeReqId(review.req_id, requirements, index);
+          const existing = reviewMap.get(reqId) || {
+            req_id: reqId,
+            issues: [],
+            rewrite_suggestion: "",
+            scores: {},
+            must_observe: [],
+            open_questions: [],
+          };
+          existing.issues = normalizeLooseStringList([...(existing.issues || []), ...(review.issues || [])]);
+          existing.open_questions = normalizeLooseStringList([...(existing.open_questions || []), ...(review.open_questions || [])]);
+          existing.must_observe = normalizeLooseStringList([...(existing.must_observe || []), ...(review.must_observe || [])]);
+          existing.rewrite_suggestion = normalizeLooseText(existing.rewrite_suggestion || review.rewrite_suggestion || "");
+          existing.scores = existing.scores && typeof existing.scores === "object" ? existing.scores : {};
+          reviewMap.set(reqId, existing);
+        });
+
+        reqIds.forEach((reqId, index) => {
+          const req = reqMap.get(reqId) || { req_id: reqId };
+          const heuristic = buildHeuristicPersonaReview(personaKey, req, index);
+          const existing = reviewMap.get(reqId) || {
+            req_id: reqId,
+            issues: [],
+            rewrite_suggestion: "",
+            scores: {},
+            must_observe: [],
+            open_questions: [],
+          };
+          if (!existing.issues.length) existing.issues = heuristic.issues;
+          if (!existing.open_questions.length) existing.open_questions = heuristic.open_questions;
+          if (!existing.rewrite_suggestion) existing.rewrite_suggestion = heuristic.rewrite_suggestion;
+          if (!existing.must_observe.length) existing.must_observe = heuristic.must_observe;
+          reviewMap.set(reqId, existing);
+        });
+
+        return {
+          reviews: reqIds.length ? reqIds.map((reqId) => reviewMap.get(reqId)).filter(Boolean) : Array.from(reviewMap.values()),
+        };
+      }
+
+      function normalizePersonaReviews(personaReviews, requirements = []) {
+        return {
+          spec: ensurePersonaCoverageForAllRequirements(normalizePersonaReviewData(personaReviews?.spec || {}, requirements), requirements, "spec"),
+          carrier: ensurePersonaCoverageForAllRequirements(normalizePersonaReviewData(personaReviews?.carrier || {}, requirements), requirements, "carrier"),
+          ux: ensurePersonaCoverageForAllRequirements(normalizePersonaReviewData(personaReviews?.ux || {}, requirements), requirements, "ux"),
+        };
+      }
+
+      function normalizeQuestionSignature(text, title = "") {
+        return normalizeLooseText(text)
+          .replaceAll(normalizeLooseText(title), "")
+          .replace(/“[^”]*”/g, "")
+          .replace(/\s+/g, "")
+          .trim();
+      }
+
+      function validatePersonaReviewQuality(data, requirements = [], personaKey = "spec") {
+        validatePersonaReview(data, `${personaKey} review`);
+        const normalized = normalizePersonaReviewData(data, requirements);
+        const fallback = PERSONA_FALLBACK_CONFIG[personaKey] || PERSONA_FALLBACK_CONFIG.spec;
+        const reqMap = new Map((requirements || []).map((req) => [canonicalizeReqId(req?.req_id || "", requirements), req]));
+        const reviews = normalized.reviews || [];
+
+        if (!reviews.length) {
+          throw new Error(`${personaKey} review 为空`);
+        }
+
+        reviews.forEach((review, index) => {
+          const reqId = canonicalizeReqId(review.req_id, requirements, index);
+          const issues = normalizeLooseStringList(review.issues || []);
+          const questions = normalizeLooseStringList(review.open_questions || []);
+          if (!issues.length) {
+            throw new Error(`${personaKey} review 缺少 issues: ${reqId}`);
+          }
+          if (!questions.length) {
+            throw new Error(`${personaKey} review 缺少 open_questions: ${reqId}`);
+          }
+        });
+
+        if (personaKey === "carrier" || personaKey === "ux") {
+          const issueSignatures = new Set();
+          const questionSignatures = new Set();
+          let genericCount = 0;
+
+          reviews.forEach((review, index) => {
+            const reqId = canonicalizeReqId(review.req_id, requirements, index);
+            const req = reqMap.get(reqId) || {};
+            const title = normalizeLooseText(req?.title || "");
+            const firstIssue = normalizeLooseStringList(review.issues || [])[0] || "";
+            const firstQuestion = normalizeLooseStringList(review.open_questions || [])[0] || "";
+            issueSignatures.add(normalizeQuestionSignature(firstIssue, title));
+            questionSignatures.add(normalizeQuestionSignature(firstQuestion, title));
+
+            if (
+              normalizeLooseText(firstIssue) === fallback.issue ||
+              normalizeLooseText(firstQuestion) === fallback.question ||
+              normalizeLooseText(review.rewrite_suggestion || "") === fallback.rewrite
+            ) {
+              genericCount += 1;
+            }
+          });
+
+          const expectedDiversity = Math.min(Math.max(reviews.length, 1), 2);
+          if (issueSignatures.size < expectedDiversity) {
+            throw new Error(`${personaKey} review 的 issues 过于重复，缺少需求特异性`);
+          }
+          if (questionSignatures.size < expectedDiversity) {
+            throw new Error(`${personaKey} review 的 open_questions 过于重复，缺少需求特异性`);
+          }
+          if (genericCount === reviews.length) {
+            throw new Error(`${personaKey} review 仍然是泛化模板问题`);
+          }
+        }
+      }
+
+      function validateSynthesis(data) {
+        validateRequiredKeys(data, SYNTHESIS_SCHEMA.required, "RequirementSpec");
+        if (!Array.isArray(data.final_requirements) || !data.final_requirements.length) {
+          throw new Error("final_requirements 不能为空");
+        }
+      }
+
+      function validateTestDesign(data) {
+        validateRequiredKeys(data, TEST_DESIGN_SCHEMA.required, "TestDesignSpec");
+        if (!Array.isArray(data.objectives) || !data.objectives.length) {
+          throw new Error("objectives 不能为空");
+        }
+      }
+
+      function validateIntegratedMatrix(data) {
+        validateRequiredKeys(data, INTEGRATED_MATRIX_SCHEMA.required, "IntegratedMatrix");
+        if (!Array.isArray(data.integrated_matrix) || !data.integrated_matrix.length) {
+          throw new Error("integrated_matrix 不能为空");
+        }
+      }
+
+      function validateTestcases(data) {
+        validateRequiredKeys(data, TESTCASE_SCHEMA.required, "TestCaseSpec");
+        if (!Array.isArray(data.testcases)) {
+          throw new Error("testcases 必须是数组");
+        }
+      }
+
+      function collectReviewIssues(personaReviews) {
+        const issues = [];
+        ["spec", "carrier", "ux"].forEach((persona) => {
+          const reviews = personaReviews?.[persona]?.reviews || [];
+          reviews.forEach((item) => {
+            normalizeLooseStringList(item.issues || []).forEach((issue) => {
+              issues.push(`[${persona}|${item.req_id || ""}] ${issue}`);
+            });
+          });
+        });
+        return issues;
+      }
+
+      function collectOpenQuestions(personaReviews) {
+        const out = [];
+        const seen = new Set();
+        ["spec", "carrier", "ux"].forEach((persona) => {
+          const reviews = personaReviews?.[persona]?.reviews || [];
+          reviews.forEach((item) => {
+            normalizeLooseStringList(item.open_questions || []).forEach((question) => {
+              const key = `${item.req_id || ""}::${question}`;
+              if (seen.has(key)) return;
+              seen.add(key);
+              out.push({ req_id: item.req_id || "", question });
+            });
+          });
+        });
+        return out;
+      }
+
+      function parseAnswerMap(answerMap, sourceRound) {
+        const out = [];
+        if (!answerMap || typeof answerMap !== "object") return out;
+        Object.entries(answerMap).forEach(([rawKey, rawAnswer]) => {
+          const answer = String(rawAnswer || "").trim();
+          if (!answer) return;
+          let reqId = "";
+          let question = String(rawKey || "").trim();
+          if (question.includes("::")) {
+            const parts = question.split("::");
+            reqId = String(parts.shift() || "").trim();
+            question = parts.join("::").trim();
+          }
+          out.push({
+            source_round: sourceRound,
+            req_id: reqId,
+            question,
+            answer,
+          });
+        });
+        return out;
+      }
+
+      function mergeAnsweredQuestions(existing, additions) {
+        const merged = new Map();
+        [...(existing || []), ...(additions || [])].forEach((item) => {
+          if (!item || typeof item !== "object") return;
+          const reqId = String(item.req_id || "").trim();
+          const question = String(item.question || "").trim();
+          const answer = String(item.answer || "").trim();
+          if (!question || !answer) return;
+          merged.set(`${reqId}::${question}`, {
+            source_round: Number(item.source_round || 0),
+            req_id: reqId,
+            question,
+            answer,
+          });
+        });
+        return Array.from(merged.values());
+      }
+
+      function buildRequirementReviewHistory(rounds, answeredQuestions) {
+        const roundList = Array.isArray(rounds) ? rounds.filter((item) => item && typeof item === "object") : [];
+        const answeredList = Array.isArray(answeredQuestions) ? answeredQuestions.filter((item) => item && typeof item === "object") : [];
+        return {
+          rounds: roundList,
+          answered_questions: answeredList,
+          answered_count: answeredList.length,
+        };
+      }
+
+      function buildReviewFeedback(previousPersonaReviews, openQuestionAnswers) {
+        const fbParts = [];
+        const issues = collectReviewIssues(previousPersonaReviews || {});
+        if (issues.length) {
+          fbParts.push(`【上轮评审issues回灌】${issues.join(" | ")}`);
+        }
+        const answers = Object.entries(openQuestionAnswers || {})
+          .map(([key, value]) => `${key}: ${value}`)
+          .filter((item) => item.trim());
+        if (answers.length) {
+          fbParts.push(`【用户补充回答】${answers.join(" | ")}`);
+        }
+        return fbParts.join("\n").trim();
+      }
+
+      function extractReqMetrics(req) {
+        const acc = req?.acceptance || {};
+        const metrics = [];
+        if (Array.isArray(acc.pass_fail)) metrics.push(...acc.pass_fail);
+        if (Array.isArray(acc.kpi)) metrics.push(...acc.kpi);
+        return metrics.map((item) => String(item)).filter(Boolean);
+      }
+
+      function firstDimensionValues(coverageMatrices) {
+        const out = {};
+        (coverageMatrices || []).forEach((matrix) => {
+          (matrix.dimensions || []).forEach((dimension) => {
+            if (!dimension || typeof dimension !== "object") return;
+            const name = dimension.name;
+            const values = Array.isArray(dimension.values) ? dimension.values : [];
+            if (name && values.length && !(name in out)) {
+              out[name] = String(values[0]);
+            }
+          });
+        });
+        return out;
+      }
+
+      function normalizeAvailableTestEnvironments(raw) {
+        if (!raw || typeof raw !== "object") raw = {};
+        const selected = Array.isArray(raw.selected_ids) ? raw.selected_ids : Array.isArray(raw.selected) ? raw.selected : [];
+        const normalized = selected.map((item) => String(item)).filter((item) => item in TEST_ENVIRONMENT_CATALOG);
+        const selectedDetails = normalized.map((item) => clone(TEST_ENVIRONMENT_CATALOG[item]));
+        return {
+          selected_ids: normalized,
+          selected_details: selectedDetails,
+          selected_count: normalized.length,
+          display: selectedDetails.map((env) => `${env.priority}. ${env.label}: ${env.description}`),
+        };
+      }
+
+      function testEnvironmentLabel(envId) {
+        return TEST_ENVIRONMENT_CATALOG[envId]?.label || envId || "未指定环境";
+      }
+
+      function recommendTestEnvironment(texts, availableEnvs) {
+        const available = normalizeAvailableTestEnvironments(availableEnvs);
+        const selectedIds = available.selected_ids;
+        const catalogIds = Object.keys(TEST_ENVIRONMENT_CATALOG);
+        const text = texts.map((item) => String(item || "")).join(" ").toLowerCase();
+
+        const protocolKeywords = [
+          "ie", "timer", "reject", "cause", "protocol", "nas", "rrc", "emm", "esm",
+          "信令", "协议", "定时器", "原因码", "异常注入", "流程构建", "ie配置", "协议栈",
+        ];
+        const realKeywords = [
+          "现网", "实网", "运营商", "用户体验", "用户操作", "真实网络", "长稳", "ui", "业务连续性", "真实sim",
+        ];
+        const amariKeywords = [
+          "amarisoft", "l3", "phy", "基础注册", "基础附着", "基础协议", "基础移动性", "仿真", "模拟基站",
+        ];
+
+        let requiredEnv = "AMARISOFT";
+        let rationale = "当前场景偏向可重复、可控的基础协议与接入验证，优先使用Amarisoft模拟基站。";
+
+        if (protocolKeywords.some((keyword) => text.includes(keyword))) {
+          requiredEnv = "PROTOCOL_ANALYZER";
+          rationale = "当前场景需要精确协议流程控制、IE配置或异常注入，更适合使用协议分析仪表。";
+        } else if (realKeywords.some((keyword) => text.includes(keyword))) {
+          requiredEnv = "REAL_NETWORK";
+          rationale = "当前场景关注真实运营商网络与用户操作体验，优先使用实网环境。";
+        } else if (amariKeywords.some((keyword) => text.includes(keyword))) {
+          requiredEnv = "AMARISOFT";
+          rationale = "当前场景偏向基础PHY/L3仿真与可重复回归，优先使用Amarisoft模拟基站。";
+        }
+
+        let primary = requiredEnv;
+        let alternatives = [];
+        let risk = "";
+
+        if (selectedIds.length) {
+          if (selectedIds.includes(requiredEnv)) {
+            alternatives = selectedIds.filter((item) => item !== requiredEnv);
+          } else {
+            alternatives = selectedIds.slice();
+            risk = `当前建议环境为${testEnvironmentLabel(requiredEnv)}，但用户未勾选该环境；若测试团队当前不可用，需要补齐环境或调整覆盖策略。`;
+          }
+        } else {
+          alternatives = catalogIds.filter((item) => item !== requiredEnv);
+          risk = "用户未勾选任何测试环境，当前按场景必要性推荐环境；请测试团队确认资源可用性。";
+        }
+
+        return {
+          primary,
+          primary_label: testEnvironmentLabel(primary),
+          alternatives,
+          alternative_labels: alternatives.map((item) => testEnvironmentLabel(item)),
+          rationale,
+          availability_risk: risk,
+        };
+      }
+
+      function defaultObjectivesFromRequirements(finalRequirements) {
+        return (finalRequirements || []).map((req, index) => ({
+          objective_id: `TO-${String(index + 1).padStart(3, "0")}`,
+          linked_reqs: [req.req_id || `REQ-${String(index + 1).padStart(3, "0")}`],
+          goal: req.title || `测试目标-${index + 1}`,
+          success_criteria: req?.acceptance?.pass_fail?.length ? req.acceptance.pass_fail : ["主流程成功", "异常可恢复"],
+          evidence: req?.observability?.must_capture?.length ? req.observability.must_capture : ["modem_log", "logcat"],
+          priority: req.priority || "P1",
+          risk_notes: "由需求自动补全目标",
+        }));
+      }
+
+      function defaultCoverageMatrices(finalRequirements, productProfile) {
+        const selectedFlat = productProfile?.selected_flat || [];
+        const ratValues = selectedFlat.filter((item) => ["5G NR", "4G LTE", "3G/2G", "NB-IoT / eMTC", "NTN", "IoT-NTN"].includes(item));
+        const powerValues = selectedFlat.filter((item) => ["PSM", "eDRX", "C-DRX", "高铁模式 / 高速移动优化"].includes(item));
+        const formValues = selectedFlat.filter((item) => ["智能手机", "功能手机", "穿戴产品", "通信模组", "车载模组"].includes(item));
+        return [
+          {
+            matrix_id: "CM-001",
+            dimensions: [
+              { name: "RAT_MODE", values: ratValues.length ? ratValues : ["5G NR", "4G LTE"] },
+              { name: "MOBILITY", values: ["静止", "普通移动", "切换场景"] },
+              { name: "POWER_SIGNAL", values: powerValues.length ? powerValues : ["正常覆盖", "弱覆盖", "重建恢复"] },
+              { name: "CONCURRENCY", values: ["单业务", "并发业务", "恢复场景"] },
+              { name: "OPERATOR_PROFILE", values: formValues.length ? formValues : ["通用运营商策略"] },
+            ],
+            sampling_strategy: {
+              type: "risk_based",
+              must_include: (finalRequirements || []).slice(0, 2).map((req) => ({ req_id: req.req_id })),
+              exclude: [],
+            },
+          },
+        ];
+      }
+
+      function normalizeObjectives(data, finalRequirements, productProfile) {
+        const objectives = Array.isArray(data.objectives) ? data.objectives : [];
+        const reqIds = (finalRequirements || []).map((req) => req.req_id).filter(Boolean);
+        const normalizedObjectives = objectives.length
+          ? objectives
+              .filter((item) => item && typeof item === "object")
+              .map((item, index) => ({
+                objective_id: item.objective_id || item.objectiveId || item.id || `TO-${String(index + 1).padStart(3, "0")}`,
+                linked_reqs: Array.isArray(item.linked_reqs) && item.linked_reqs.length ? item.linked_reqs : reqIds.slice(0, 1),
+                goal: item.goal || item.title || item.objective || `测试目标-${index + 1}`,
+                success_criteria: Array.isArray(item.success_criteria) && item.success_criteria.length ? item.success_criteria : Array.isArray(item.pass_fail) ? item.pass_fail : ["主流程成功"],
+                evidence: Array.isArray(item.evidence)
+                  ? item.evidence
+                  : item.evidence && typeof item.evidence === "object" && Array.isArray(item.evidence.must_capture)
+                    ? item.evidence.must_capture
+                    : Array.isArray(item.must_capture)
+                      ? item.must_capture
+                      : ["modem_log", "logcat"],
+                priority: item.priority || "P1",
+                risk_notes: item.risk_notes || item.risk || "待补充",
+              }))
+          : defaultObjectivesFromRequirements(finalRequirements);
+
+        const matrices = Array.isArray(data.coverage_matrices) ? data.coverage_matrices : [];
+        const normalizedMatrices = matrices.length
+          ? matrices
+              .filter((item) => item && typeof item === "object")
+              .map((item, index) => {
+                let dimensions = item.dimensions;
+                if (dimensions && typeof dimensions === "object" && !Array.isArray(dimensions)) {
+                  dimensions = Object.entries(dimensions).map(([name, values]) => ({
+                    name,
+                    values: Array.isArray(values) ? values : [values],
+                  }));
+                }
+                if (!Array.isArray(dimensions)) {
+                  dimensions = [];
+                }
+                return {
+                  matrix_id: item.matrix_id || item.matrixId || `CM-${String(index + 1).padStart(3, "0")}`,
+                  dimensions,
+                  sampling_strategy: item.sampling_strategy || item.sampling || { type: "pairwise", must_include: [], exclude: [] },
+                };
+              })
+          : defaultCoverageMatrices(finalRequirements, productProfile);
+
+        return {
+          ...data,
+          objectives: normalizedObjectives,
+          coverage_matrices: normalizedMatrices,
+          design_notes: Array.isArray(data.design_notes) ? data.design_notes : [],
+          de_scoped: Array.isArray(data.de_scoped) ? data.de_scoped : [],
+        };
+      }
+
+      function fallbackIntegratedMatrix(finalRequirements, objectives, coverageMatrices, availableEnvs) {
+        const reqMap = Object.fromEntries((finalRequirements || []).map((req) => [req.req_id, req]));
+        const defaults = firstDimensionValues(coverageMatrices || []);
+        return (objectives || []).map((objective, index) => {
+          const reqId = Array.isArray(objective.linked_reqs) && objective.linked_reqs.length ? objective.linked_reqs[0] : "";
+          const req = reqMap[reqId] || {};
+          const keyConfiguration = {
+            RAT: defaults.RAT_MODE || "NR_SA",
+            Mobility: defaults.MOBILITY || "CONN_HO",
+            SignalOrPower: defaults.POWER_SIGNAL || "NORMAL",
+            Concurrency: defaults.CONCURRENCY || "DATA_ONLY",
+            Operator: defaults.OPERATOR_PROFILE || "GENERIC",
+          };
+          const scenario = `${objective.goal || "目标验证"} | ${keyConfiguration.RAT} / ${keyConfiguration.Mobility} / ${keyConfiguration.SignalOrPower}`;
+          const passCriteria = extractReqMetrics(req).length ? extractReqMetrics(req) : objective.success_criteria || ["关键指标满足需求标准"];
+          return {
+            row_id: `ROW-${String(index + 1).padStart(3, "0")}`,
+            req_id: reqId || `REQ-${String(index + 1).padStart(3, "0")}`,
+            objective_id: objective.objective_id || `TO-${String(index + 1).padStart(3, "0")}`,
+            scenario,
+            key_configuration: keyConfiguration,
+            pass_criteria: passCriteria,
+            test_environment: recommendTestEnvironment([scenario, ...passCriteria], availableEnvs),
+          };
+        });
+      }
+
+      function normalizeIntegratedRows(rows, finalRequirements, objectives, availableEnvs) {
+        const reqMap = Object.fromEntries((finalRequirements || []).map((req) => [req.req_id, req]));
+        const objMap = Object.fromEntries((objectives || []).map((obj) => [obj.objective_id, obj]));
+        return (rows || [])
+          .filter((row) => row && typeof row === "object")
+          .map((row, index) => {
+            const reqId = row.req_id || ((objMap[row.objective_id || ""]?.linked_reqs || [])[0]) || `REQ-${String(index + 1).padStart(3, "0")}`;
+            const objectiveId = row.objective_id || `TO-${String(index + 1).padStart(3, "0")}`;
+            const req = reqMap[reqId] || {};
+            const objective = objMap[objectiveId] || {};
+            const keyConfiguration = row.key_configuration && typeof row.key_configuration === "object" ? row.key_configuration : {};
+            let scenario = String(row.scenario || "").trim();
+            if (!scenario) {
+              scenario = `${objective.goal || "目标验证"} @ ${keyConfiguration.RAT || "NR_SA"}/${keyConfiguration.Mobility || "CONN_HO"}`;
+            }
+            if (scenario === objective.goal) {
+              scenario = `${scenario} @ ${keyConfiguration.RAT || "NR_SA"}/${keyConfiguration.Mobility || "CONN_HO"}`;
+            }
+            const passCriteria = Array.isArray(row.pass_criteria) ? row.pass_criteria.slice() : [String(row.pass_criteria || "")].filter(Boolean);
+            extractReqMetrics(req).forEach((metric) => {
+              if (!passCriteria.includes(metric)) {
+                passCriteria.push(metric);
+              }
+            });
+            let env = row.test_environment && typeof row.test_environment === "object" ? clone(row.test_environment) : {};
+            const primary = String(env.primary || "").trim();
+            if (!primary || !(primary in TEST_ENVIRONMENT_CATALOG)) {
+              env = recommendTestEnvironment([scenario, ...passCriteria], availableEnvs);
+            } else {
+              env = {
+                primary,
+                primary_label: env.primary_label || testEnvironmentLabel(primary),
+                alternatives: Array.isArray(env.alternatives) ? env.alternatives.filter((item) => item in TEST_ENVIRONMENT_CATALOG) : [],
+                alternative_labels: Array.isArray(env.alternative_labels) && env.alternative_labels.length
+                  ? env.alternative_labels
+                  : (Array.isArray(env.alternatives) ? env.alternatives.filter((item) => item in TEST_ENVIRONMENT_CATALOG).map((item) => testEnvironmentLabel(item)) : []),
+                rationale: env.rationale || env.reason || "",
+                availability_risk: env.availability_risk || env.risk || "",
+              };
+            }
+            return {
+              row_id: row.row_id || `ROW-${String(index + 1).padStart(3, "0")}`,
+              req_id: reqId,
+              objective_id: objectiveId,
+              scenario,
+              key_configuration: keyConfiguration,
+              pass_criteria: passCriteria.length ? passCriteria : ["关键指标满足需求标准"],
+              test_environment: env,
+            };
+          });
+      }
+
+      function fallbackTestcasesFromIntegrated(rows, availableEnvs) {
+        return (rows || []).map((row, index) => {
+          const cfg = row.key_configuration && typeof row.key_configuration === "object" ? row.key_configuration : {};
+          return {
+            tc_id: `TC-${String(index + 1).padStart(3, "0")}`,
+            objective_id: row.objective_id || "TO-001",
+            title: row.scenario || `场景-${index + 1}`,
+            tags: ["MatrixDriven", "P1"],
+            preconditions: ["环境配置与矩阵组合已生效"],
+            steps: [
+              { action: "SET_NETWORK_PROFILE", params: cfg },
+              { action: "TRIGGER_REGISTRATION", params: { mode: cfg.RAT || "NR_SA" } },
+              { action: "WAIT", params: { timeout_s: 60 } },
+              { action: "CHECK", params: { item: "SERVICE_READY" } },
+              { action: "COLLECT_LOG", params: { items: ["modem_log", "logcat"] } },
+            ],
+            expected: [row.scenario || "场景通过"],
+            pass_fail: Array.isArray(row.pass_criteria) ? row.pass_criteria : [String(row.pass_criteria || "")],
+            test_environment: row.test_environment && typeof row.test_environment === "object"
+              ? clone(row.test_environment)
+              : recommendTestEnvironment([row.scenario || "", ...(Array.isArray(row.pass_criteria) ? row.pass_criteria : [])], availableEnvs),
+            observability: { must_capture: ["modem_log", "logcat"], assertions: ["ASSERT_ATTACH_SUCCESS"] },
+            failure_taxonomy: [{ code: "MATRIX_FAIL", signals: ["criteria_not_met"], likely_owner: "MODEM_OR_NETWORK" }],
+            trace: { req_ids: [row.req_id || ""], source_refs: [row.row_id || `ROW-${String(index + 1).padStart(3, "0")}`] },
+          };
+        });
+      }
+
+      function fallbackTestcasesFromObjectives(objectives, availableEnvs) {
+        return (objectives || []).map((objective, index) => ({
+          tc_id: `TC-${String(index + 1).padStart(3, "0")}`,
+          objective_id: objective.objective_id || `TO-${String(index + 1).padStart(3, "0")}`,
+          title: objective.goal || `测试目标-${index + 1}`,
+          tags: ["Regression", objective.priority || "P1"],
+          preconditions: ["网络与SIM配置正确"],
+          steps: [
+            { action: "SET_DEVICE_STATE", params: { airplane: false } },
+            { action: "TRIGGER_REGISTRATION", params: { mode: "NR_SA" } },
+            { action: "WAIT", params: { timeout_s: 60 } },
+            { action: "CHECK", params: { item: "IMS_REGISTERED" } },
+            { action: "COLLECT_LOG", params: { items: ["modem_log", "logcat"] } },
+          ],
+          expected: Array.isArray(objective.success_criteria) ? objective.success_criteria : ["满足目标成功标准"],
+          pass_fail: ["满足目标成功标准", "失败可定位"],
+          test_environment: recommendTestEnvironment([objective.goal || "", ...((objective.success_criteria || []).map((item) => String(item)))], availableEnvs),
+          observability: {
+            must_capture: Array.isArray(objective.evidence) && objective.evidence.length ? objective.evidence : ["modem_log", "logcat"],
+            assertions: ["ASSERT_IMS_REGISTERED"],
+          },
+          failure_taxonomy: [{ code: "TC_FAIL", signals: ["timeout"], likely_owner: "MODEM_OR_NETWORK" }],
+          trace: { req_ids: Array.isArray(objective.linked_reqs) ? objective.linked_reqs : [], source_refs: ["USER_INPUT"] },
+        }));
+      }
+
+      function normalizeTestcases(data, integratedRows, availableEnvs) {
+        const rows = Array.isArray(integratedRows) ? integratedRows : [];
+        const rowEnvMap = Object.fromEntries(
+          rows
+            .filter((row) => row && typeof row === "object" && row.row_id && row.test_environment && typeof row.test_environment === "object")
+            .map((row) => [row.row_id, row.test_environment])
+        );
+        const testcases = Array.isArray(data.testcases) ? data.testcases : [];
+        return {
+          testcases: testcases
+            .filter((tc) => tc && typeof tc === "object")
+            .map((tc, index) => {
+              const stepsRaw = Array.isArray(tc.steps) ? tc.steps : [];
+              const steps = stepsRaw
+                .filter((step) => step && typeof step === "object")
+                .map((step) => ({
+                  action: step.action || "CHECK",
+                  params: step.params && typeof step.params === "object" ? step.params : { description: step.description || "" },
+                }));
+
+              const trace = tc.trace && typeof tc.trace === "object" ? tc.trace : tc.traceability && typeof tc.traceability === "object" ? tc.traceability : {};
+              const sourceRefs = Array.isArray(trace.source_refs)
+                ? trace.source_refs
+                : Array.isArray(trace.sources)
+                  ? trace.sources
+                  : [String(trace.source_refs || trace.sources || "USER_INPUT")];
+              let linkedEnv = null;
+              sourceRefs.forEach((ref) => {
+                const key = String(ref || "").trim();
+                if (!linkedEnv && rowEnvMap[key]) {
+                  linkedEnv = rowEnvMap[key];
+                }
+              });
+
+              let env = tc.test_environment && typeof tc.test_environment === "object" ? clone(tc.test_environment) : null;
+              const primary = String(env?.primary || "").trim();
+              if (!env) {
+                env = linkedEnv || recommendTestEnvironment([tc.title || "", ...((Array.isArray(tc.pass_fail) ? tc.pass_fail : []).map((item) => String(item)))], availableEnvs);
+              } else if (!primary || !(primary in TEST_ENVIRONMENT_CATALOG)) {
+                env = linkedEnv || recommendTestEnvironment([tc.title || ""], availableEnvs);
+              } else {
+                env = {
+                  primary,
+                  primary_label: env.primary_label || testEnvironmentLabel(primary),
+                  alternatives: Array.isArray(env.alternatives) ? env.alternatives.filter((item) => item in TEST_ENVIRONMENT_CATALOG) : [],
+                  alternative_labels: Array.isArray(env.alternative_labels) && env.alternative_labels.length
+                    ? env.alternative_labels
+                    : (Array.isArray(env.alternatives) ? env.alternatives.filter((item) => item in TEST_ENVIRONMENT_CATALOG).map((item) => testEnvironmentLabel(item)) : []),
+                  rationale: env.rationale || env.reason || "",
+                  availability_risk: env.availability_risk || env.risk || "",
+                };
+              }
+
+              return {
+                tc_id: tc.tc_id || tc.testcase_id || tc.id || `TC-${String(index + 1).padStart(3, "0")}`,
+                objective_id: tc.objective_id || tc.objectiveId || "TO-001",
+                title: tc.title || `测试用例-${index + 1}`,
+                tags: Array.isArray(tc.tags)
+                  ? tc.tags
+                  : Array.isArray(tc.labels)
+                    ? tc.labels
+                    : [String(tc.tags || tc.labels || "Regression")],
+                preconditions: Array.isArray(tc.preconditions)
+                  ? tc.preconditions
+                  : Array.isArray(tc.precondition)
+                    ? tc.precondition
+                    : [String(tc.precondition || "待补充前置条件")],
+                steps,
+                expected: Array.isArray(tc.expected)
+                  ? tc.expected
+                  : Array.isArray(tc.expected_results)
+                    ? tc.expected_results
+                    : [String(tc.expected || tc.expected_results || "待补充期望结果")],
+                pass_fail: Array.isArray(tc.pass_fail)
+                  ? tc.pass_fail
+                  : Array.isArray(tc.criteria)
+                    ? tc.criteria
+                    : [String(tc.pass_fail || tc.criteria || "待补充通过条件")],
+                test_environment: env,
+                observability: tc.observability && typeof tc.observability === "object"
+                  ? tc.observability
+                  : { must_capture: ["modem_log", "logcat"], assertions: ["ASSERT_IMS_REGISTERED"] },
+                failure_taxonomy: Array.isArray(tc.failure_taxonomy) && tc.failure_taxonomy.length
+                  ? tc.failure_taxonomy
+                  : [{ code: "TC_FAIL", signals: ["unknown"], likely_owner: "UNKNOWN" }],
+                trace: {
+                  req_ids: Array.isArray(trace.req_ids) ? trace.req_ids : Array.isArray(trace.requirements) ? trace.requirements : [],
+                  source_refs: sourceRefs,
+                },
+              };
+            }),
+        };
+      }
+
+      function validateListOfDict(items, requiredKeys, label) {
+        if (!Array.isArray(items)) {
+          throw new Error(`${label} 必须是数组`);
+        }
+        items.forEach((item, index) => validateRequiredKeys(item, requiredKeys, `${label}[${index}]`));
+      }
+
+      function ensureActionsInVocabulary(testcases, vocabulary) {
+        const set = new Set((vocabulary || []).map((item) => String(item)));
+        (testcases || []).forEach((tc) => {
+          (tc.steps || []).forEach((step) => {
+            if (!set.has(String(step.action || ""))) {
+              throw new Error(`发现未在 action_vocabulary 中声明的动作: ${step.action || ""}`);
+            }
+          });
+        });
+      }
+
+      function reviewDesignQuality(requirementSpec, designSpec) {
+        const issues = [];
+        const reqs = requirementSpec?.final_requirements || [];
+        const objectives = designSpec?.objectives || [];
+        const integrated = designSpec?.integrated_matrix || [];
+        if (!Array.isArray(objectives) || !objectives.length) issues.push("objectives为空");
+        if (!Array.isArray(integrated) || !integrated.length) issues.push("integrated_matrix为空");
+        const reqIds = new Set(reqs.filter((item) => item && item.req_id).map((item) => item.req_id));
+        const coveredReqIds = new Set(integrated.filter((item) => item && item.req_id).map((item) => item.req_id));
+        const missing = Array.from(reqIds).filter((reqId) => !coveredReqIds.has(reqId));
+        if (missing.length) issues.push(`整合覆盖矩阵缺少需求覆盖: ${missing.join(", ")}`);
+
+        const numericReq = [];
+        reqs.forEach((req) => {
+          extractReqMetrics(req).forEach((metric) => {
+            if (/\d/.test(String(metric))) numericReq.push(String(metric));
+          });
+        });
+        if (numericReq.length && integrated.length) {
+          const passText = integrated.map((row) => (Array.isArray(row.pass_criteria) ? row.pass_criteria.join(" ") : String(row.pass_criteria || ""))).join(" ");
+          const retained = numericReq.filter((metric) => passText.includes(metric)).length;
+          if (retained < Math.max(1, Math.floor(numericReq.length / 3))) {
+            issues.push("需求中的数值型验收标准在设计稿中保留不足");
+          }
+        }
+        return issues;
+      }
+
+      function reviewTestcaseQuality(requirementSpec, testCaseSpec) {
+        const issues = [];
+        const reqs = requirementSpec?.final_requirements || [];
+        const testcases = testCaseSpec?.testcases || [];
+        if (!Array.isArray(testcases) || !testcases.length) {
+          return ["testcases为空"];
+        }
+        const reqIds = new Set(reqs.filter((item) => item && item.req_id).map((item) => item.req_id));
+        const covered = new Set();
+        testcases.forEach((tc) => {
+          (tc.trace?.req_ids || []).forEach((reqId) => covered.add(reqId));
+        });
+        const missing = Array.from(reqIds).filter((reqId) => !covered.has(reqId));
+        if (missing.length) issues.push(`用例trace缺少需求覆盖: ${missing.join(", ")}`);
+
+        const numericReq = [];
+        reqs.forEach((req) => {
+          extractReqMetrics(req).forEach((metric) => {
+            if (/\d/.test(String(metric))) numericReq.push(String(metric));
+          });
+        });
+        const passText = testcases.map((tc) => (Array.isArray(tc.pass_fail) ? tc.pass_fail.join(" ") : String(tc.pass_fail || ""))).join(" ");
+        if (numericReq.length) {
+          const retained = numericReq.filter((metric) => passText.includes(metric)).length;
+          if (retained < Math.max(1, Math.floor(numericReq.length / 3))) {
+            issues.push("需求中的数值型验收标准在用例pass_fail中保留不足");
+          }
+        }
+        return issues;
+      }
+
+      function chunked(items, size) {
+        const chunkSize = size > 0 ? size : 16;
+        const out = [];
+        for (let index = 0; index < items.length; index += chunkSize) {
+          out.push(items.slice(index, index + chunkSize));
+        }
+        return out;
+      }
+
+      function formatTestEnvironmentSummary(env) {
+        if (!env || typeof env !== "object") return "未指定";
+        const primary = `${env.primary_label || env.primary || "未指定"}`.trim() || "未指定";
+        const alternatives = Array.isArray(env.alternative_labels) && env.alternative_labels.length
+          ? env.alternative_labels
+          : Array.isArray(env.alternatives)
+            ? env.alternatives
+            : [];
+        const parts = [primary];
+        if (alternatives.length) parts.push(`备选: ${alternatives.join("、")}`);
+        if (env.rationale) parts.push(`依据: ${env.rationale}`);
+        return parts.join("；");
+      }
+
+      function formatTestEnvironmentRisk(env) {
+        if (!env || typeof env !== "object") return "";
+        return String(env.availability_risk || "").trim();
+      }
+
+      async function callChatCompletions(systemPrompt, userPrompt) {
+        syncInputsToLlmConfig();
+        if (!state.llm.apiKey) throw new Error("请先填写 API Key");
+        if (!state.llm.model) throw new Error("请先填写 Model");
+        const baseUrl = String(state.llm.baseUrl || "").replace(/\/+$/, "");
+        const endpoint = `${baseUrl}/chat/completions`;
+        const controller = new AbortController();
+        const timer = window.setTimeout(() => controller.abort(new Error("LLM 请求超时")), Math.max(10000, Number(state.llm.timeoutMs || 180000)));
+        try {
+          const resp = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${state.llm.apiKey}`,
+            },
+            signal: controller.signal,
+            body: JSON.stringify({
+              model: state.llm.model,
+              temperature: Number.isFinite(state.llm.temperature) ? state.llm.temperature : 0.2,
+              max_tokens: Number.isFinite(state.llm.maxTokens) ? state.llm.maxTokens : 6000,
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userPrompt },
+              ],
+            }),
+          });
+          if (!resp.ok) {
+            const text = await resp.text();
+            throw new Error(`LLM 请求失败: HTTP ${resp.status} ${text}`);
+          }
+          const data = await resp.json();
+          const content = data?.choices?.[0]?.message?.content;
+          if (typeof content !== "string" || !content.trim()) {
+            throw new Error("LLM 未返回可解析内容");
+          }
+          return content;
+        } finally {
+          window.clearTimeout(timer);
+        }
+      }
+
+      function extractFirstJsonBlock(text) {
+        const raw = String(text || "").trim();
+        const codeFenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+        const candidate = codeFenceMatch ? codeFenceMatch[1].trim() : raw;
+        if (candidate.startsWith("{") || candidate.startsWith("[")) {
+          try {
+            JSON.parse(candidate);
+            return candidate;
+          } catch (error) {
+          }
+        }
+
+        for (let start = 0; start < candidate.length; start += 1) {
+          const first = candidate[start];
+          if (first !== "{" && first !== "[") continue;
+          let depth = 0;
+          let inString = false;
+          let escaped = false;
+          const openChar = first;
+          const closeChar = first === "{" ? "}" : "]";
+          for (let index = start; index < candidate.length; index += 1) {
+            const ch = candidate[index];
+            if (inString) {
+              if (escaped) {
+                escaped = false;
+              } else if (ch === "\\") {
+                escaped = true;
+              } else if (ch === '"') {
+                inString = false;
+              }
+              continue;
+            }
+            if (ch === '"') {
+              inString = true;
+              continue;
+            }
+            if (ch === openChar) depth += 1;
+            if (ch === closeChar) {
+              depth -= 1;
+              if (depth === 0) {
+                const jsonText = candidate.slice(start, index + 1);
+                JSON.parse(jsonText);
+                return jsonText;
+              }
+            }
+          }
+        }
+        throw new Error("未能从模型响应中提取 JSON");
+      }
+
+      async function runStructuredAgent({ label, prompt, variables, validate, fallback, retries = 2 }) {
+        let repairFeedback = "";
+        for (let attempt = 1; attempt <= retries + 1; attempt += 1) {
+          const systemPrompt = prompt.system + (repairFeedback ? `\n\nRepair note:\n${repairFeedback}` : "");
+          const userPrompt = fillTemplate(prompt.user, variables);
+          logActivity(`${label}: 调用 LLM（第 ${attempt} 次）`);
+          try {
+            const content = await callChatCompletions(systemPrompt, userPrompt);
+            const jsonText = extractFirstJsonBlock(content);
+            const data = JSON.parse(jsonText);
+            validate(data);
+            return data;
+          } catch (error) {
+            repairFeedback = `上一版输出存在问题：${error.message || error}。请严格只返回满足 schema 的 JSON，不要输出任何解释。`;
+            logActivity(`${label}: 结构化解析失败，第 ${attempt} 次，原因：${error.message || error}`, attempt > retries && fallback === undefined ? "error" : "warn");
+            if (attempt > retries) {
+              if (fallback !== undefined) {
+                logActivity(`${label}: 启用本地回退结果`, "warn");
+                return clone(fallback);
+              }
+              throw error;
+            }
+          }
+        }
+        throw new Error(`${label}: 未获得结构化结果`);
+      }
+
+      async function runReqParse(seedRequirements, reviewFeedback, productProfile) {
+        const fallback = clone(seedRequirements);
+        const data = await runStructuredAgent({
+          label: "需求解读",
+          prompt: PROMPTS.reqParse,
+          variables: {
+            glossary_json: JSON.stringify({ attach: "注册", "idle reselection": "驻留重选" }, null, 0),
+            doc_meta_json: JSON.stringify({ type: "USER_INPUT", lang: "mixed" }, null, 0),
+            text_chunk: JSON.stringify(seedRequirements, null, 0),
+            rag_context: getRagContext(),
+            review_feedback: reviewFeedback || "",
+            product_profile_json: JSON.stringify(productProfile, null, 0),
+            output_schema: JSON.stringify(REQUIREMENT_LIST_SCHEMA, null, 0),
+          },
+          validate: validateRequirementList,
+          fallback,
+        });
+        if (data.length < seedRequirements.length) {
+          const seen = new Set(data.filter((item) => item && item.req_id).map((item) => item.req_id));
+          seedRequirements.forEach((seed) => {
+            if (!seen.has(seed.req_id)) data.push(seed);
+          });
+          logActivity("需求解读结果缺少部分条目，已用输入种子补齐覆盖。", "warn");
+        }
+        return data;
+      }
+
+      async function runTriPersonaReviews(requirements) {
+        const fallbackFactory = (personaKey) => buildPersonaFallbackReviews(personaKey, requirements);
+
+        const sharedVariables = {
+          requirements_json: JSON.stringify(requirements, null, 0),
+          history_risk_json: JSON.stringify([], null, 0),
+          return_schema: JSON.stringify(PERSONA_REVIEW_SCHEMA, null, 0),
+        };
+
+        const [spec, carrier, ux] = await Promise.all([
+          runStructuredAgent({
+            label: "规范评审",
+            prompt: PROMPTS.reviewSpec,
+            variables: sharedVariables,
+            validate: (data) => validatePersonaReviewQuality(data, requirements, "spec"),
+            fallback: fallbackFactory("spec"),
+            retries: 3,
+          }),
+          runStructuredAgent({
+            label: "运营商评审",
+            prompt: PROMPTS.reviewCarrier,
+            variables: sharedVariables,
+            validate: (data) => validatePersonaReviewQuality(data, requirements, "carrier"),
+            fallback: fallbackFactory("carrier"),
+            retries: 3,
+          }),
+          runStructuredAgent({
+            label: "现网体验评审",
+            prompt: PROMPTS.reviewUx,
+            variables: sharedVariables,
+            validate: (data) => validatePersonaReviewQuality(data, requirements, "ux"),
+            fallback: fallbackFactory("ux"),
+            retries: 3,
+          }),
+        ]);
+
+        return normalizePersonaReviews({ spec, carrier, ux }, requirements);
+      }
+
+      async function runSynthesis(requirements, personaReviews) {
+        const fallback = {
+          final_requirements: clone(requirements),
+          conflicts: [],
+          questions_to_ask: ["请确认每条需求的量化通过标准"],
+          assumptions: ["默认按P1执行，待业务确认后升降级"],
+        };
+        const data = await runStructuredAgent({
+          label: "仲裁收敛",
+          prompt: PROMPTS.synthesis,
+          variables: {
+            requirements_json: JSON.stringify(requirements, null, 0),
+            reviews_spec_json: JSON.stringify(personaReviews.spec, null, 0),
+            reviews_carrier_json: JSON.stringify(personaReviews.carrier, null, 0),
+            reviews_ux_json: JSON.stringify(personaReviews.ux, null, 0),
+            return_schema: JSON.stringify(SYNTHESIS_SCHEMA, null, 0),
+          },
+          validate: validateSynthesis,
+          fallback,
+        });
+        (data.final_requirements || []).forEach((req) => {
+          if (req && typeof req === "object") {
+            req.persona_sources = Array.isArray(req.persona_sources) && req.persona_sources.length ? req.persona_sources : ["PRD", "Carrier", "UX"];
+          }
+        });
+        return data;
+      }
+
+      async function generateRequirementRound(round) {
+        const requirements = parseRequirements(els.requirementsInput.value);
+        if (!requirements.length) throw new Error("请至少输入一条需求");
+
+        const productProfile = getSelectedProductProfile();
+        const testEnvironments = getSelectedTestEnvironments();
+        const seedRequirements = buildSeedRequirements(requirements, productProfile);
+        const openQuestionAnswers = round > 1 ? collectOpenQuestionAnswers() : {};
+        const answeredQuestions = round > 1
+          ? mergeAnsweredQuestions(state.requirementReviewHistory?.answered_questions || [], parseAnswerMap(openQuestionAnswers, round - 1))
+          : [];
+        const reviewFeedback = round > 1 ? buildReviewFeedback(state.personaReviews || {}, openQuestionAnswers) : "";
+
+        const parsedRequirements = await runReqParse(seedRequirements, reviewFeedback, productProfile);
+        const personaReviews = await runTriPersonaReviews(parsedRequirements);
+        const requirementSpec = await runSynthesis(parsedRequirements, personaReviews);
+
+        const roundSummary = {
+          round,
+          is_final_round: round >= 3,
+          issues: collectReviewIssues(personaReviews),
+          open_questions: collectOpenQuestions(personaReviews),
+        };
+        const priorRounds = (state.requirementReviewHistory?.rounds || []).filter((item) => item.round !== round);
+        priorRounds.push(roundSummary);
+        priorRounds.sort((a, b) => Number(a.round || 0) - Number(b.round || 0));
+
+        state.round = round;
+        state.requirementSpec = requirementSpec;
+        state.personaReviews = personaReviews;
+        state.currentOpenQuestions = roundSummary.open_questions;
+        state.requirementReviewHistory = buildRequirementReviewHistory(priorRounds, answeredQuestions);
+        resetDownstream({ clearDesign: true, clearCases: true });
+        state.requirementSpec = requirementSpec;
+        state.personaReviews = personaReviews;
+        state.currentOpenQuestions = roundSummary.open_questions;
+        state.requirementReviewHistory = buildRequirementReviewHistory(priorRounds, answeredQuestions);
+
+        const ragHitText = getRagContext() ? "已带入补充上下文" : "未提供补充上下文";
+        setStatus(`测试需求评审完成：Round ${round}${round >= 3 ? "（终稿）" : ""}\n${ragHitText}\n当前待确认问题：${roundSummary.open_questions.length}`, roundSummary.open_questions.length ? "warn" : "normal");
+        logActivity(`Round ${round} 完成，待确认问题 ${roundSummary.open_questions.length} 个。`);
+        saveSession();
+        renderAll();
+        return {
+          round,
+          requirementSpec,
+          personaReviews,
+          roundSummary,
+          testEnvironments,
+        };
+      }
+
+      async function runRequirementRoundsAutomatically() {
+        let currentRound = 1;
+        if (state.round >= 1 && state.round < 3) {
+          currentRound = state.round + 1;
+        }
+        while (currentRound <= 3) {
+          await generateRequirementRound(currentRound);
+          currentRound += 1;
+        }
+      }
+
+      function buildDesignConstraints(supervisorFeedback = "") {
+        return {
+          lab_resources: "由测试团队在静态页中勾选的当前资源为准",
+          time_budget: "TBD",
+          questions_to_ask: state.requirementSpec?.questions_to_ask || [],
+          assumptions: state.requirementSpec?.assumptions || [],
+          persona_reviews: state.personaReviews || {},
+          product_profile: getSelectedProductProfile(),
+          available_test_environments: getSelectedTestEnvironments(),
+          supervisor_feedback: supervisorFeedback || "",
+        };
+      }
+
+      async function generateDesignSpec() {
+        if (!state.requirementSpec) throw new Error("请先完成至少一轮需求评审");
+        const finalRequirements = state.requirementSpec.final_requirements || [];
+        const productProfile = getSelectedProductProfile();
+        const testEnvironments = getSelectedTestEnvironments();
+
+        let supervisorFeedback = "";
+        let designSpec = null;
+        for (let attempt = 1; attempt <= 3; attempt += 1) {
+          logActivity(`测试设计生成开始，第 ${attempt} 次尝试。`);
+          const rawDesign = await runStructuredAgent({
+            label: "测试设计",
+            prompt: PROMPTS.testDesigner,
+            variables: {
+              final_requirements_json: JSON.stringify(finalRequirements, null, 0),
+              constraints_json: JSON.stringify(buildDesignConstraints(supervisorFeedback), null, 0),
+              return_schema: JSON.stringify(TEST_DESIGN_SCHEMA, null, 0),
+            },
+            validate: validateTestDesign,
+            fallback: {
+              objectives: defaultObjectivesFromRequirements(finalRequirements),
+              coverage_matrices: defaultCoverageMatrices(finalRequirements, productProfile),
+              design_notes: ["测试设计使用本地回退模板生成，建议人工复核。"],
+              de_scoped: [],
+            },
+          });
+
+          const normalized = normalizeObjectives(rawDesign, finalRequirements, productProfile);
+
+          const matrixData = await runStructuredAgent({
+            label: "整合覆盖矩阵",
+            prompt: PROMPTS.integratedMatrix,
+            variables: {
+              final_requirements_json: JSON.stringify(finalRequirements, null, 0),
+              objectives_json: JSON.stringify(normalized.objectives, null, 0),
+              coverage_matrices_json: JSON.stringify(normalized.coverage_matrices, null, 0),
+              available_test_environments_json: JSON.stringify(testEnvironments, null, 0),
+              output_schema: JSON.stringify(INTEGRATED_MATRIX_SCHEMA, null, 0),
+            },
+            validate: validateIntegratedMatrix,
+            fallback: {
+              integrated_matrix: fallbackIntegratedMatrix(finalRequirements, normalized.objectives, normalized.coverage_matrices, testEnvironments),
+            },
+          });
+
+          normalized.integrated_matrix = normalizeIntegratedRows(
+            matrixData.integrated_matrix || [],
+            finalRequirements,
+            normalized.objectives || [],
+            testEnvironments
+          );
+          normalized.generation_meta = {
+            design_generated_by_llm: true,
+            integrated_matrix_generated_by_llm: true,
+            design_prompt: "test_designer.txt",
+            integrated_prompt: "integrated_matrix_designer.txt",
+          };
+          const issues = reviewDesignQuality(state.requirementSpec, normalized);
+          if (!issues.length || attempt >= 3) {
+            if (issues.length) {
+              logActivity(`测试设计质量检查仍有问题：${issues.join(" | ")}`, "warn");
+            }
+            designSpec = normalized;
+            break;
+          }
+          supervisorFeedback = issues.join("；");
+          logActivity(`测试设计质量检查未通过，回流重试：${supervisorFeedback}`, "warn");
+        }
+
+        validateListOfDict(designSpec.objectives || [], TEST_OBJECTIVE_REQUIRED_KEYS, "objectives");
+        state.testDesignSpec = designSpec;
+        state.testCaseSpec = null;
+        setStatus(`测试设计稿已生成。\n测试目标 ${designSpec.objectives.length} 个，整合矩阵 ${designSpec.integrated_matrix.length} 行。`);
+        logActivity(`测试设计稿完成，整合矩阵 ${designSpec.integrated_matrix.length} 行。`);
+        saveSession();
+        renderAll();
+      }
+
+      async function generateTestcases() {
+        if (!state.testDesignSpec) throw new Error("请先生成测试设计稿");
+        const actionVocabulary = DEFAULT_ACTION_VOCABULARY.slice();
+        const integratedRows = Array.isArray(state.testDesignSpec.integrated_matrix) ? state.testDesignSpec.integrated_matrix : [];
+        const chunks = chunked(integratedRows, 16);
+        const testEnvironments = getSelectedTestEnvironments();
+        let supervisorFeedback = "";
+        let finalSpec = null;
+
+        for (let attempt = 1; attempt <= 3; attempt += 1) {
+          logActivity(`测试用例生成开始，第 ${attempt} 次尝试。`);
+          const collected = [];
+          for (let index = 0; index < chunks.length; index += 1) {
+            const chunk = chunks[index];
+            setStatus(`正在生成测试用例，第 ${index + 1}/${chunks.length} 批...`);
+            logActivity(`测试用例分批生成：第 ${index + 1}/${chunks.length} 批。`);
+            const fallback = {
+              testcases: chunk.length
+                ? fallbackTestcasesFromIntegrated(chunk, testEnvironments)
+                : fallbackTestcasesFromObjectives(state.testDesignSpec.objectives || [], testEnvironments),
+            };
+            const batch = await runStructuredAgent({
+              label: `测试用例批次 ${index + 1}`,
+              prompt: PROMPTS.testCaseGenerator,
+              variables: {
+                integrated_matrix_json: JSON.stringify(chunk, null, 0),
+                objectives_json: JSON.stringify(state.testDesignSpec.objectives || [], null, 0),
+                coverage_json: JSON.stringify(
+                  {
+                    coverage_matrices: state.testDesignSpec.coverage_matrices || [],
+                    questions_to_ask: state.requirementSpec?.questions_to_ask || [],
+                    assumptions: state.requirementSpec?.assumptions || [],
+                    persona_reviews: state.personaReviews || {},
+                    available_test_environments: testEnvironments,
+                    batch_index: index + 1,
+                    batch_total: chunks.length,
+                    supervisor_feedback: supervisorFeedback || "",
+                  },
+                  null,
+                  0
+                ),
+                action_vocabulary_json: JSON.stringify(actionVocabulary, null, 0),
+                return_schema: JSON.stringify(TESTCASE_SCHEMA, null, 0),
+              },
+              validate: validateTestcases,
+              fallback,
+            });
+            const normalizedBatch = normalizeTestcases(batch, chunk, testEnvironments);
+            collected.push(...normalizedBatch.testcases);
+          }
+          finalSpec = { testcases: collected };
+          const issues = reviewTestcaseQuality(state.requirementSpec, finalSpec);
+          if (!issues.length || attempt >= 3) {
+            if (issues.length) {
+              logActivity(`测试用例质量检查仍有问题：${issues.join(" | ")}`, "warn");
+            }
+            break;
+          }
+          supervisorFeedback = issues.join("；");
+          logActivity(`测试用例质量检查未通过，回流重试：${supervisorFeedback}`, "warn");
+        }
+
+        validateListOfDict(finalSpec.testcases || [], TESTCASE_REQUIRED_KEYS, "testcases");
+        ensureActionsInVocabulary(finalSpec.testcases || [], actionVocabulary);
+        state.testCaseSpec = finalSpec;
+        setStatus(`测试用例稿已生成。\n共 ${finalSpec.testcases.length} 条测试用例。`);
+        logActivity(`测试用例生成完成，共 ${finalSpec.testcases.length} 条。`);
+        saveSession();
+        renderAll();
+      }
+
+      function renderDocList(items = []) {
+        const arr = normalizeLooseStringList(items);
+        if (!arr.length) return `<p class="render-empty">无</p>`;
+        return `<ul>${arr.map((item) => `<li>${esc(item)}</li>`).join("")}</ul>`;
+      }
+
+      function renderDocKeyValueTable(rows = []) {
+        const arr = Array.isArray(rows) ? rows.filter((item) => Array.isArray(item) && item.length >= 2) : [];
+        if (!arr.length) return `<p class="render-empty">无</p>`;
+        return `<div class="scroll-box"><table><tbody>${arr.map((row) => `<tr><th>${esc(row[0])}</th><td>${esc(row[1])}</td></tr>`).join("")}</tbody></table></div>`;
+      }
+
+      function renderAnsweredQuestionsTable(items = []) {
+        const rows = Array.isArray(items) ? items.filter((item) => item && typeof item === "object") : [];
+        if (!rows.length) return `<p class="render-empty">暂无已确认问题。</p>`;
+        return `<div class="scroll-box"><table><thead><tr><th>来源轮次</th><th>需求ID</th><th>已确认问题</th><th>用户确认/补充</th></tr></thead><tbody>${rows
+          .map((item) => `<tr><td>${esc(item.source_round || "")}</td><td>${esc(normalizeLooseText(item.req_id || ""))}</td><td>${esc(normalizeLooseText(item.question || ""))}</td><td>${esc(normalizeLooseText(item.answer || ""))}</td></tr>`)
+          .join("")}</tbody></table></div>`;
+      }
+
+      function formatTestEnvironmentCell(env) {
+        if (!env || typeof env !== "object") return ["未指定", ""];
+        const primary = String(env.primary_label || env.primary || "未指定").trim() || "未指定";
+        const alternatives = Array.isArray(env.alternative_labels) && env.alternative_labels.length
+          ? env.alternative_labels
+          : Array.isArray(env.alternatives)
+            ? env.alternatives
+            : [];
+        const rationale = String(env.rationale || "").trim();
+        const risk = String(env.availability_risk || "").trim();
+        const parts = [primary];
+        if (alternatives.length) parts.push(`备选: ${alternatives.join("、")}`);
+        if (rationale) parts.push(`依据: ${rationale}`);
+        return [parts.join("；"), risk];
+      }
+
+      function buildDesignDocumentHtml() {
+        const design = state.testDesignSpec || {};
+        const requirementSpec = state.requirementSpec || {};
+        const personaReviews = state.personaReviews || {};
+        const requirementReviewHistory = state.requirementReviewHistory || {};
+        const requirementInputs = parseRequirements(els.requirementsInput.value);
+        const productProfile = getSelectedProductProfile();
+        const testEnvironments = getSelectedTestEnvironments();
+        const reqs = Array.isArray(requirementSpec.final_requirements) ? requirementSpec.final_requirements : [];
+        const objectives = Array.isArray(design.objectives) ? design.objectives : [];
+        const matrices = Array.isArray(design.coverage_matrices) ? design.coverage_matrices : [];
+        const integrated = Array.isArray(design.integrated_matrix) ? design.integrated_matrix : [];
+        const title = reqs[0]?.title || requirementInputs[0] || "测试设计文档";
+
+        const reqTable = reqs.length
+          ? `<table><thead><tr><th>需求ID</th><th>标题</th><th>优先级</th><th>RAT范围</th><th>通过标准</th></tr></thead><tbody>${reqs
+              .map((req) => `<tr><td>${esc(req.req_id || "")}</td><td>${esc(req.title || "")}</td><td>${esc(req.priority || "")}</td><td>${esc((req.rat_scope || []).join("、"))}</td><td>${esc(((req.acceptance || {}).pass_fail || []).join(" / "))}</td></tr>`)
+              .join("")}</tbody></table>`
+          : "<p>无</p>";
+
+        const reviewSections = [
+          ["规范评审", (personaReviews.spec || {}).reviews || []],
+          ["运营商评审", (personaReviews.carrier || {}).reviews || []],
+          ["现网体验评审", (personaReviews.ux || {}).reviews || []],
+        ]
+          .map(([label, items]) => {
+            const list = Array.isArray(items) ? items : [];
+            const body = list.length
+              ? `<table><thead><tr><th>需求ID</th><th>问题项</th><th>待确认问题</th><th>改写建议</th></tr></thead><tbody>${list
+                  .map((item) => `<tr><td>${esc(normalizeLooseText(item.req_id || ""))}</td><td>${esc(normalizeLooseStringList(item.issues || []).join("；"))}</td><td>${esc(normalizeLooseStringList(item.open_questions || []).join("；"))}</td><td>${esc(normalizeLooseText(item.rewrite_suggestion || ""))}</td></tr>`)
+                  .join("")}</tbody></table>`
+              : "<p>无</p>";
+            return `<section><h3>${esc(label)}</h3>${body}</section>`;
+          })
+          .join("");
+
+        const objectiveTable = objectives.length
+          ? `<table><thead><tr><th>目标ID</th><th>关联需求</th><th>目标</th><th>成功标准</th><th>证据</th><th>优先级</th></tr></thead><tbody>${objectives
+              .map((objective) => `<tr><td>${esc(objective.objective_id || "")}</td><td>${esc((objective.linked_reqs || []).join("、"))}</td><td>${esc(objective.goal || "")}</td><td>${esc((objective.success_criteria || []).join(" / "))}</td><td>${esc((objective.evidence || []).join(" / "))}</td><td>${esc(objective.priority || "")}</td></tr>`)
+              .join("")}</tbody></table>`
+          : "<p>无</p>";
+
+        const matrixHtml = matrices.length
+          ? matrices
+              .map((matrix) => {
+                const dimensions = Array.isArray(matrix.dimensions)
+                  ? matrix.dimensions.map((dimension) => `${dimension.name || ""}: ${Array.isArray(dimension.values) ? dimension.values.join("、") : String(dimension.values || "")}`).join("<br/>")
+                  : "";
+                const sampling = matrix.sampling_strategy || {};
+                return `<article class="matrix-card"><h4>${esc(matrix.matrix_id || "覆盖矩阵")}</h4><div>${dimensions || "无"}</div><p><strong>采样策略：</strong>${esc(sampling.type || "")}</p><p><strong>必选组合：</strong>${esc(JSON.stringify(sampling.must_include || [], null, 0))}</p><p><strong>排除组合：</strong>${esc(JSON.stringify(sampling.exclude || [], null, 0))}</p></article>`;
+              })
+              .join("")
+          : "<p>无</p>";
+
+        const integratedTable = integrated.length
+          ? `<table><thead><tr><th>行ID</th><th>需求ID</th><th>关联目标</th><th>测试场景</th><th>配置选取</th><th>通过标准</th><th>推荐测试环境</th><th>资源风险</th></tr></thead><tbody>${integrated
+              .map((row, index) => {
+                const cfg = row.key_configuration || {};
+                const cfgText = Object.keys(cfg).map((key) => `${key}: ${cfg[key]}`).join(" / ");
+                const [envText, riskText] = formatTestEnvironmentCell(row.test_environment);
+                return `<tr><td>${esc(row.row_id || `ROW-${index + 1}`)}</td><td>${esc(row.req_id || "")}</td><td>${esc(row.objective_id || "")}</td><td>${esc(row.scenario || "")}</td><td>${esc(cfgText)}</td><td>${esc((row.pass_criteria || []).join(" / "))}</td><td>${esc(envText)}</td><td>${esc(riskText)}</td></tr>`;
+              })
+              .join("")}</tbody></table>`
+          : "<p>无</p>";
+
+        return `<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${esc(title)} - 测试设计文档</title>
+    <style>
+      body { margin: 0; padding: 32px; font-family: "Avenir Next", "PingFang SC", "Microsoft YaHei", sans-serif; background: #f4efe5; color: #1f2937; }
+      .page { max-width: 1180px; margin: 0 auto; background: #fffdf8; border: 1px solid #e5dccd; border-radius: 18px; box-shadow: 0 18px 48px rgba(15, 23, 42, 0.08); overflow: hidden; }
+      .hero { padding: 28px 32px 24px; background: linear-gradient(135deg, #f6efe3 0%, #fffaf1 58%, #eef6f7 100%); border-bottom: 1px solid #e9ddcb; }
+      .hero h1 { margin: 0; font-size: 30px; }
+      .hero p { margin: 8px 0 0; color: #5b6472; }
+      .section { padding: 24px 32px; border-top: 1px solid #efe6d8; }
+      .section:first-of-type { border-top: none; }
+      h2 { margin: 0 0 14px; font-size: 20px; }
+      h3 { margin: 0 0 10px; font-size: 16px; }
+      h4 { margin: 0 0 8px; font-size: 14px; }
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th, td { border: 1px solid #e5dccd; padding: 9px 10px; text-align: left; vertical-align: top; }
+      th { background: #f8f1e7; }
+      ul { margin: 8px 0 0 18px; }
+      p { line-height: 1.7; margin: 8px 0; }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+      .matrix-card { border: 1px solid #e7ddcf; border-radius: 12px; padding: 14px; background: #fff; margin-bottom: 12px; }
+      @media (max-width: 900px) { body { padding: 12px; } .section, .hero { padding: 18px; } .grid { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <section class="hero">
+        <h1>标准测试设计文档</h1>
+        <p>${esc(title)}</p>
+      </section>
+      <section class="section">
+        <h2>一、文档信息</h2>
+        ${renderDocKeyValueTable([
+          ["生成时间", nowText()],
+          ["当前轮次", `${state.round}`],
+          ["需求条目数", `${reqs.length}`],
+          ["测试目标数", `${objectives.length}`],
+          ["整合矩阵条目数", `${integrated.length}`],
+        ])}
+      </section>
+      <section class="section">
+        <h2>二、需求输入与产品背景</h2>
+        <div class="grid">
+          <div><h3>原始需求输入</h3>${renderDocList(requirementInputs)}</div>
+          <div><h3>产品通信背景与支持特性</h3>${renderDocList((productProfile.profile_display || []).map((item) => `${item.group}: ${item.values.join("、")}`))}</div>
+          <div><h3>测试团队可用测试环境</h3>${renderDocList(testEnvironments.display || [])}</div>
+        </div>
+      </section>
+      <section class="section">
+        <h2>三、测试需求解读稿</h2>
+        ${reqTable}
+      </section>
+      <section class="section">
+        <h2>四、三人评审记录</h2>
+        ${reviewSections}
+        <section>
+          <h3>用户已确认问题</h3>
+          ${renderAnsweredQuestionsTable(requirementReviewHistory.answered_questions || [])}
+        </section>
+      </section>
+      <section class="section">
+        <h2>五、测试目标</h2>
+        ${objectiveTable}
+      </section>
+      <section class="section">
+        <h2>六、覆盖矩阵</h2>
+        ${matrixHtml}
+      </section>
+      <section class="section">
+        <h2>七、整合覆盖矩阵</h2>
+        ${integratedTable}
+      </section>
+      <section class="section">
+        <h2>八、设计说明</h2>
+        ${renderDocList(design.design_notes || [])}
+      </section>
+      <section class="section">
+        <h2>九、范围裁剪与待跟进项</h2>
+        <div class="grid">
+          <div><h3>去范围项</h3>${renderDocList(design.de_scoped || [])}</div>
+          <div><h3>待确认问题</h3>${renderDocList(requirementSpec.questions_to_ask || [])}</div>
+        </div>
+      </section>
+    </div>
+  </body>
+</html>`;
+      }
+
+      function refreshDesignDocumentPreview() {
+        revokeDesignDocUrl();
+        if (!state.testDesignSpec) {
+          els.designDocFrame.srcdoc = "<p style='padding:20px;font-family:sans-serif;color:#5f6b78;'>暂无测试设计文档。</p>";
+          return;
+        }
+        const html = buildDesignDocumentHtml();
+        els.designDocFrame.srcdoc = html;
+        state.designDocUrl = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
+      }
+
+      function renderMetrics() {
+        const metrics = [
+          { label: "当前轮次", value: state.round || 0, note: state.busy ? "处理中" : "评审轮次" },
+          { label: "待确认问题", value: state.currentOpenQuestions.length, note: "当前轮输出" },
+          { label: "已确认问题", value: state.requirementReviewHistory?.answered_count || 0, note: "历史累计" },
+          { label: "测试目标", value: (state.testDesignSpec?.objectives || []).length, note: "设计稿" },
+          { label: "整合矩阵", value: (state.testDesignSpec?.integrated_matrix || []).length, note: "设计稿" },
+          { label: "测试用例", value: (state.testCaseSpec?.testcases || []).length, note: "最终导出" },
+          { label: "已选环境", value: getSelectedTestEnvironments().selected_count, note: "资源约束" },
+          { label: "产品特性", value: getSelectedProductProfile().selected_count, note: "背景约束" },
+        ];
+        els.metricGrid.innerHTML = metrics
+          .map((metric) => `<article class="metric-card"><span>${esc(metric.label)}</span><strong>${esc(metric.value)}</strong><div class="muted">${esc(metric.note)}</div></article>`)
+          .join("");
+      }
+
+      function renderOpenQuestions() {
+        if (!state.currentOpenQuestions.length) {
+          els.openQuestionsPanel.innerHTML = `<p class="render-empty">当前无待人工确认问题。</p>`;
+          return;
+        }
+        els.openQuestionsPanel.innerHTML = state.currentOpenQuestions
+          .map((question) => {
+            const reqId = normalizeLooseText(question.req_id || "REQ");
+            const questionText = normalizeLooseText(question.question || "");
+            const key = `${reqId}::${questionText}`;
+            const existing = (state.requirementReviewHistory?.answered_questions || []).find((item) => item.req_id === reqId && item.question === questionText);
+            return `<div class="qa-item">
+              <div><strong>${esc(reqId)}</strong></div>
+              <p>${esc(questionText)}</p>
+              <input class="oq-answer" data-key="${esc(key)}" type="text" placeholder="请输入你的确认/补充答案" value="${esc(existing?.answer || "")}" />
+            </div>`;
+          })
+          .join("");
+      }
+
+      function collectOpenQuestionAnswers() {
+        const answers = {};
+        document.querySelectorAll(".oq-answer").forEach((input) => {
+          const key = input.getAttribute("data-key");
+          const value = String(input.value || "").trim();
+          if (key && value) answers[key] = value;
+        });
+        return answers;
+      }
+
+      function renderReviewHistory() {
+        const rounds = Array.isArray(state.requirementReviewHistory?.rounds) ? state.requirementReviewHistory.rounds : [];
+        if (!rounds.length) {
+          els.reviewRounds.innerHTML = `<p class="render-empty">尚未开始评审。</p>`;
+        } else {
+          els.reviewRounds.innerHTML = rounds
+            .map((round) => `<article class="round-card">
+              <h4>Round ${esc(round.round || "")}${round.is_final_round ? " / 终稿" : ""}</h4>
+              <p>问题项：${esc((round.issues || []).length)} 条</p>
+              <p>待确认问题：${esc((round.open_questions || []).length)} 条</p>
+              <p>${esc((round.issues || []).slice(0, 3).join(" | ") || "本轮无问题摘要")}</p>
+            </article>`)
+            .join("");
+        }
+        els.answeredQuestionsPanel.innerHTML = `<h4 style="margin:0 0 10px">用户已确认问题</h4>${renderAnsweredQuestionsTable(state.requirementReviewHistory?.answered_questions || [])}`;
+      }
+
+      function renderRequirementSummary() {
+        const reqs = state.requirementSpec?.final_requirements || [];
+        if (!reqs.length) {
+          els.requirementSummary.innerHTML = `<p class="render-empty">暂无结构化需求。</p>`;
+          return;
+        }
+        const rows = reqs
+          .map((req) => `<tr><td>${esc(req.req_id || "")}</td><td>${esc(req.title || "")}</td><td>${esc(req.priority || "")}</td><td>${esc((req.rat_scope || []).join(", "))}</td><td>${esc((req.persona_sources || []).join(", "))}</td><td>${esc(((req.acceptance || {}).pass_fail || []).join(" / "))}</td></tr>`)
+          .join("");
+        els.requirementSummary.innerHTML = `<div class="scroll-box"><table><thead><tr><th>需求ID</th><th>标题</th><th>优先级</th><th>RAT范围</th><th>评审来源</th><th>通过标准</th></tr></thead><tbody>${rows}</tbody></table></div><div style="height:12px"></div>${renderDocList(state.requirementSpec.questions_to_ask || [])}`;
+      }
+
+      function renderReviewSummary() {
+        const personas = [
+          { key: "spec", label: "规范评审" },
+          { key: "carrier", label: "运营商评审" },
+          { key: "ux", label: "现网体验评审" },
+        ];
+        let html = "";
+        personas.forEach((persona) => {
+          const items = state.personaReviews?.[persona.key]?.reviews || [];
+          if (!items.length) return;
+          const rows = items
+            .map((item) => `<tr><td>${esc(normalizeLooseText(item.req_id || ""))}</td><td>${esc(normalizeLooseStringList(item.issues || []).join("；"))}</td><td>${esc(normalizeLooseStringList(item.open_questions || []).join("；"))}</td><td>${esc(normalizeLooseText(item.rewrite_suggestion || ""))}</td></tr>`)
+            .join("");
+          html += `<h4>${esc(persona.label)}</h4><div class="scroll-box"><table><thead><tr><th>需求ID</th><th>问题项</th><th>待确认问题</th><th>改写建议</th></tr></thead><tbody>${rows}</tbody></table></div><div style="height:12px"></div>`;
+        });
+        els.reviewSummary.innerHTML = html || `<p class="render-empty">暂无评审过程记录。</p>`;
+      }
+
+      function renderDesignSummary() {
+        const design = state.testDesignSpec;
+        if (!design) {
+          els.designSummary.innerHTML = `<p class="render-empty">暂无结构化测试设计。</p>`;
+          refreshDesignDocumentPreview();
+          return;
+        }
+        const objectives = design.objectives || [];
+        const matrices = design.coverage_matrices || [];
+        const integrated = design.integrated_matrix || [];
+
+        const objectiveRows = objectives
+          .map((objective) => `<tr><td>${esc(objective.objective_id || "")}</td><td>${esc((objective.linked_reqs || []).join(", "))}</td><td>${esc(objective.goal || "")}</td><td>${esc((objective.success_criteria || []).join(" / "))}</td><td>${esc(objective.priority || "")}</td></tr>`)
+          .join("");
+
+        const matrixCards = matrices
+          .map((matrix) => {
+            const dimensions = Array.isArray(matrix.dimensions)
+              ? matrix.dimensions.map((dimension) => `${dimension.name || "dimension"}: ${Array.isArray(dimension.values) ? dimension.values.join(", ") : String(dimension.values || "")}`).join("<br/>")
+              : "";
+            return `<article class="round-card"><h4>${esc(matrix.matrix_id || "")}</h4><p>${dimensions || "无维度"}</p></article>`;
+          })
+          .join("");
+
+        const integratedRows = integrated
+          .map((row, index) => {
+            const cfg = row.key_configuration || {};
+            const cfgText = Object.keys(cfg).map((key) => `${key}: ${cfg[key]}`).join(" / ");
+            return `<tr><td>${esc(row.row_id || `ROW-${index + 1}`)}</td><td>${esc(row.req_id || "")}</td><td>${esc(row.objective_id || "")}</td><td>${esc(row.scenario || "")}</td><td>${esc(cfgText)}</td><td>${esc((row.pass_criteria || []).join(" / "))}</td><td>${esc(formatTestEnvironmentSummary(row.test_environment))}</td><td>${esc(formatTestEnvironmentRisk(row.test_environment))}</td></tr>`;
+          })
+          .join("");
+
+        els.designSummary.innerHTML = `
+          <h3 style="margin-top:0">测试目标</h3>
+          <div class="scroll-box"><table><thead><tr><th>目标ID</th><th>关联需求</th><th>目标</th><th>成功标准</th><th>优先级</th></tr></thead><tbody>${objectiveRows}</tbody></table></div>
+          <div style="height:12px"></div>
+          <h3>覆盖矩阵</h3>
+          <div class="list-stack">${matrixCards || `<p class="render-empty">无</p>`}</div>
+          <div style="height:12px"></div>
+          <h3>整合覆盖矩阵</h3>
+          <div class="scroll-box"><table><thead><tr><th>行ID</th><th>需求ID</th><th>关联目标</th><th>具体测试场景</th><th>矩阵组合选取</th><th>通过标准</th><th>推荐测试环境</th><th>资源风险</th></tr></thead><tbody>${integratedRows}</tbody></table></div>
+          <div style="height:12px"></div>
+          <h3>设计说明</h3>
+          ${renderDocList(design.design_notes || [])}
+          <div style="height:12px"></div>
+          <h3>去范围项</h3>
+          ${renderDocList(design.de_scoped || [])}
+        `;
+        refreshDesignDocumentPreview();
+      }
+
+      function renderCasesSummary() {
+        const testcases = state.testCaseSpec?.testcases || [];
+        if (!testcases.length) {
+          els.casesSummary.innerHTML = `<p class="render-empty">暂无结构化测试用例。</p>`;
+          return;
+        }
+        const rows = testcases
+          .map((tc) => `<tr><td>${esc(tc.tc_id || "")}</td><td>${esc(tc.objective_id || "")}</td><td>${esc(tc.title || "")}</td><td>${esc((tc.tags || []).join(", "))}</td><td>${esc((tc.pass_fail || []).join(" / "))}</td><td>${esc(formatTestEnvironmentSummary(tc.test_environment))}</td><td>${esc(formatTestEnvironmentRisk(tc.test_environment))}</td><td>${esc((tc.steps || []).length)}</td></tr>`)
+          .join("");
+        els.casesSummary.innerHTML = `<div class="scroll-box"><table><thead><tr><th>用例ID</th><th>目标ID</th><th>标题</th><th>标签</th><th>通过标准</th><th>测试环境</th><th>资源风险</th><th>步骤数</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+      }
+
+      function renderRawJson() {
+        els.rawRequirementJson.textContent = _safeJsonText(state.requirementSpec || {});
+        els.rawReviewJson.textContent = _safeJsonText(state.personaReviews || {});
+        els.rawHistoryJson.textContent = _safeJsonText(state.requirementReviewHistory || {});
+        els.rawDesignJson.textContent = _safeJsonText(state.testDesignSpec || {});
+        els.rawCaseJson.textContent = _safeJsonText(state.testCaseSpec || {});
+      }
+
+      function renderAll() {
+        renderMetrics();
+        renderOpenQuestions();
+        renderReviewHistory();
+        renderRequirementSummary();
+        renderReviewSummary();
+        renderDesignSummary();
+        renderCasesSummary();
+        renderRawJson();
+      }
+
+      function listToText(value) {
+        return normalizeLooseStringList(value).join("\n");
+      }
+
+      function listToCommaText(value) {
+        return normalizeLooseStringList(value).join(", ");
+      }
+
+      function safeJson(value) {
+        try {
+          return JSON.stringify(value, null, 0);
+        } catch (error) {
+          return String(value ?? "");
+        }
+      }
+
+      function downloadBlob(filename, blob) {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 3000);
+      }
+
+      function downloadDesignDocument() {
+        if (!state.testDesignSpec) throw new Error("暂无测试设计文档");
+        const html = buildDesignDocumentHtml();
+        downloadBlob("test-design-document.html", new Blob([html], { type: "text/html;charset=utf-8" }));
+      }
+
+      function openDesignDocumentInNewTab() {
+        if (!state.testDesignSpec) throw new Error("暂无测试设计文档");
+        if (!state.designDocUrl) refreshDesignDocumentPreview();
+        window.open(state.designDocUrl, "_blank", "noopener,noreferrer");
+      }
+
+      function buildWorkbook() {
+        if (!window.XLSX) {
+          throw new Error("未加载 SheetJS（XLSX）库，无法导出 Excel");
+        }
+        const XLSXLib = window.XLSX;
+        const wb = XLSXLib.utils.book_new();
+        const requirementInput = parseRequirements(els.requirementsInput.value);
+        const requirementSpec = state.requirementSpec || {};
+        const personaReviews = state.personaReviews || {};
+        const requirementReviewHistory = state.requirementReviewHistory || {};
+        const testDesignSpec = state.testDesignSpec || {};
+        const testCaseSpec = state.testCaseSpec || {};
+        const testcases = Array.isArray(testCaseSpec.testcases) ? testCaseSpec.testcases : [];
+
+        const wsInput = XLSXLib.utils.aoa_to_sheet([
+          ["index", "requirement_text"],
+          ...requirementInput.map((text, index) => [index + 1, text]),
+        ]);
+        XLSXLib.utils.book_append_sheet(wb, wsInput, "需求输入");
+
+        const reqRows = [
+          ["req_id", "title", "priority", "rat_scope", "persona_sources", "pass_fail", "kpi"],
+          ...((requirementSpec.final_requirements || []).filter((item) => item && typeof item === "object").map((req) => [
+            req.req_id || "",
+            req.title || "",
+            req.priority || "",
+            listToText(req.rat_scope || []),
+            listToText(req.persona_sources || []),
+            listToText((req.acceptance || {}).pass_fail || []),
+            listToText((req.acceptance || {}).kpi || []),
+          ])),
+        ];
+        XLSXLib.utils.book_append_sheet(wb, XLSXLib.utils.aoa_to_sheet(reqRows), "测试需求稿");
+
+        const reviewRows = [["persona", "req_id", "issues", "open_questions", "rewrite_suggestion", "scores_json"]];
+        ["spec", "carrier", "ux"].forEach((persona) => {
+          ((personaReviews[persona] || {}).reviews || []).forEach((item) => {
+            reviewRows.push([
+              persona,
+              item.req_id || "",
+              listToText(item.issues || []),
+              listToText(item.open_questions || []),
+              item.rewrite_suggestion || "",
+              safeJson(item.scores || {}),
+            ]);
+          });
+        });
+        XLSXLib.utils.book_append_sheet(wb, XLSXLib.utils.aoa_to_sheet(reviewRows), "三人评审");
+
+        const objectiveRows = [
+          ["objective_id", "linked_reqs", "goal", "success_criteria", "evidence", "priority", "risk_notes"],
+          ...((testDesignSpec.objectives || []).filter((item) => item && typeof item === "object").map((objective) => [
+            objective.objective_id || "",
+            listToText(objective.linked_reqs || []),
+            objective.goal || "",
+            listToText(objective.success_criteria || []),
+            listToText(objective.evidence || []),
+            objective.priority || "",
+            objective.risk_notes || "",
+          ])),
+        ];
+        XLSXLib.utils.book_append_sheet(wb, XLSXLib.utils.aoa_to_sheet(objectiveRows), "测试设计目标");
+
+        const matrixRows = [
+          ["row_id", "req_id", "objective_id", "scenario", "key_configuration", "pass_criteria", "recommended_test_environment", "availability_risk"],
+          ...((testDesignSpec.integrated_matrix || []).filter((item) => item && typeof item === "object").map((row) => {
+            const [envText, riskText] = formatTestEnvironmentCell(row.test_environment);
+            return [
+              row.row_id || "",
+              row.req_id || "",
+              row.objective_id || "",
+              row.scenario || "",
+              safeJson(row.key_configuration || {}),
+              listToText(row.pass_criteria || []),
+              envText,
+              riskText,
+            ];
+          })),
+        ];
+        XLSXLib.utils.book_append_sheet(wb, XLSXLib.utils.aoa_to_sheet(matrixRows), "测试设计矩阵");
+
+        const caseRows = [
+          ["tc_id", "objective_id", "title", "tags", "preconditions", "expected", "pass_fail", "recommended_test_environment", "availability_risk", "steps_count", "must_capture"],
+          ...testcases.filter((item) => item && typeof item === "object").map((tc) => {
+            const [envText, riskText] = formatTestEnvironmentCell(tc.test_environment);
+            return [
+              tc.tc_id || "",
+              tc.objective_id || "",
+              tc.title || "",
+              listToCommaText(tc.tags || []),
+              listToText(tc.preconditions || []),
+              listToText(tc.expected || []),
+              listToText(tc.pass_fail || []),
+              envText,
+              riskText,
+              (tc.steps || []).length,
+              listToCommaText((tc.observability || {}).must_capture || []),
+            ];
+          }),
+        ];
+        XLSXLib.utils.book_append_sheet(wb, XLSXLib.utils.aoa_to_sheet(caseRows), "测试用例");
+
+        const answerRows = [
+          ["source_round", "req_id", "question", "answer"],
+          ...((requirementReviewHistory.answered_questions || []).filter((item) => item && typeof item === "object").map((item) => [
+            item.source_round || "",
+            item.req_id || "",
+            item.question || "",
+            item.answer || "",
+          ])),
+        ];
+        XLSXLib.utils.book_append_sheet(wb, XLSXLib.utils.aoa_to_sheet(answerRows), "问题确认记录");
+
+        const stepRows = [["tc_id", "step_index", "action", "params_json"]];
+        testcases.forEach((tc) => {
+          (tc.steps || []).forEach((step, index) => {
+            stepRows.push([tc.tc_id || "", index + 1, step.action || "", safeJson(step.params || {})]);
+          });
+        });
+        XLSXLib.utils.book_append_sheet(wb, XLSXLib.utils.aoa_to_sheet(stepRows), "用例步骤");
+
+        const rawRows = [
+          ["section", "json"],
+          ["requirement_spec", safeJson(requirementSpec)],
+          ["persona_reviews", safeJson(personaReviews)],
+          ["requirement_review_history", safeJson(requirementReviewHistory)],
+          ["test_design_spec", safeJson(testDesignSpec)],
+          ["test_case_spec", safeJson(testCaseSpec)],
+        ];
+        XLSXLib.utils.book_append_sheet(wb, XLSXLib.utils.aoa_to_sheet(rawRows), "RawJSON");
+
+        return wb;
+      }
+
+      function downloadExcel() {
+        if (!state.testCaseSpec?.testcases?.length) {
+          throw new Error("暂无可下载的测试用例");
+        }
+        const workbook = buildWorkbook();
+        window.XLSX.writeFile(workbook, "testcases.xlsx");
+      }
+
+      function resetSession() {
+        localStorage.removeItem(SESSION_KEY);
+        revokeDesignDocUrl();
+        state.round = 0;
+        state.currentOpenQuestions = [];
+        state.requirementSpec = null;
+        state.personaReviews = null;
+        state.requirementReviewHistory = { rounds: [], answered_questions: [], answered_count: 0 };
+        state.testDesignSpec = null;
+        state.testCaseSpec = null;
+        els.requirementsInput.value = "";
+        els.ragContextInput.value = "";
+        setSelectedProductProfile({});
+        setSelectedTestEnvironments([]);
+        setStatus("当前会话已清空。");
+        logActivity("已清空当前会话。");
+        renderAll();
+      }
+
+      async function guardedAction(action) {
+        if (state.busy) return;
+        setBusy(true);
+        setStatus("正在处理，请稍候...");
+        try {
+          await action();
+        } catch (error) {
+          console.error(error);
+          setStatus(error.message || String(error), "error");
+          logActivity(error.message || String(error), "error");
+        } finally {
+          setBusy(false);
+          if (!els.statusText.textContent.trim()) {
+            setStatus("流程可继续。");
+          }
+          saveSession();
+          renderMetrics();
+        }
+      }
+
+      function bindEvents() {
+        [
+          els.llmBaseUrl,
+          els.llmApiKey,
+          els.llmModel,
+          els.llmTemperature,
+          els.llmMaxTokens,
+          els.llmTimeoutMs,
+          els.requirementsInput,
+          els.ragContextInput,
+        ].forEach((el) => {
+          el.addEventListener("change", () => {
+            syncInputsToLlmConfig();
+            saveSession();
+          });
+        });
+
+        document.addEventListener("change", (event) => {
+          const target = event.target;
+          if (target instanceof HTMLInputElement && (target.dataset.profileGroup || target.dataset.testEnvId)) {
+            saveSession();
+            renderMetrics();
+          }
+        });
+
+        els.runRound1Btn.addEventListener("click", () => guardedAction(async () => {
+          resetDownstream({ clearReview: true, clearDesign: true, clearCases: true });
+          await generateRequirementRound(1);
+        }));
+
+        els.runNextRoundBtn.addEventListener("click", () => guardedAction(async () => {
+          if (!state.round) throw new Error("请先执行 Round 1");
+          if (state.round >= 3) throw new Error("已经完成 3 轮评审");
+          await generateRequirementRound(state.round + 1);
+        }));
+
+        els.submitAnswersBtn.addEventListener("click", () => guardedAction(async () => {
+          if (!state.round) throw new Error("请先执行 Round 1");
+          if (state.round >= 3) throw new Error("已经完成 3 轮评审");
+          await generateRequirementRound(state.round + 1);
+        }));
+
+        els.autoReviewBtn.addEventListener("click", () => guardedAction(async () => {
+          if (!state.round) {
+            resetDownstream({ clearReview: true, clearDesign: true, clearCases: true });
+          }
+          await runRequirementRoundsAutomatically();
+        }));
+
+        els.generateDesignBtn.addEventListener("click", () => guardedAction(async () => {
+          await generateDesignSpec();
+        }));
+
+        els.generateCasesBtn.addEventListener("click", () => guardedAction(async () => {
+          await generateTestcases();
+        }));
+
+        els.downloadDesignDocBtn.addEventListener("click", () => guardedAction(async () => {
+          downloadDesignDocument();
+          setStatus("测试设计文档 HTML 已下载。");
+          logActivity("测试设计文档 HTML 已下载。");
+        }));
+
+        els.openDesignDocBtn.addEventListener("click", () => guardedAction(async () => {
+          openDesignDocumentInNewTab();
+          setStatus("测试设计文档已在新窗口打开。");
+        }));
+
+        els.downloadExcelBtn.addEventListener("click", () => guardedAction(async () => {
+          downloadExcel();
+          setStatus("测试用例 Excel 已下载。");
+          logActivity("测试用例 Excel 已下载。");
+        }));
+
+        els.resetSessionBtn.addEventListener("click", () => guardedAction(async () => {
+          resetSession();
+        }));
+
+        window.addEventListener("beforeunload", () => {
+          saveSession();
+          revokeDesignDocUrl();
+        });
+      }
+
+      function initDefaults() {
+        renderProductProfileOptions();
+        renderTestEnvironmentOptions();
+        loadSession();
+        syncLlmConfigToInputs();
+        bindEvents();
+        renderAll();
+        if (state.requirementSpec || state.testDesignSpec || state.testCaseSpec) {
+          setStatus("已恢复上次会话。");
+          logActivity("已恢复浏览器本地会话。");
+        } else {
+          setStatus("配置 LLM 后，可以从 Round 1 开始。");
+        }
+      }
+
+      initDefaults();
+    </script>
+  </body>
+</html>
