@@ -1,7 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta http-equiv="Content-Language" content="zh-CN" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>TestFlow Standalone</title>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -654,7 +656,7 @@
             <li>当前核心能力本质上是 prompt 编排、结构化 JSON 校验、文档拼装和 Excel 导出，这些都可以在浏览器端完成。</li>
             <li>新的静态页保留现有测试环境约束规则：优先已勾选环境，必须依赖未勾选环境时仍保留设计并输出风险。</li>
             <li>三轮评审里的待确认问题、用户确认答案和确认历史会保存在浏览器本地，并进入设计文档和 Excel。</li>
-            <li>页面假设你配置的 LLM 接口支持浏览器跨域访问，以及 OpenAI 兼容的 `chat/completions` 协议。</li>
+            <li>页面假设你配置的 LLM 接口支持浏览器跨域访问，以及 OpenAI 兼容的 `chat/completions` 协议；本地 Ollama 可直接兼容。</li>
           </ul>
         </aside>
       </section>
@@ -671,17 +673,17 @@
             <div class="field">
               <label for="llmBaseUrl">API Base URL</label>
               <input id="llmBaseUrl" type="text" placeholder="https://api.openai.com/v1" />
-              <p class="hint">默认拼接为 `&lt;baseUrl&gt;/chat/completions`。</p>
+              <p class="hint">默认拼接为 `&lt;baseUrl&gt;/chat/completions`；若填写本地 Ollama `http://127.0.0.1:11434`，会自动走 `/v1/chat/completions`。</p>
             </div>
             <div class="field">
               <label for="llmApiKey">API Key</label>
-              <input id="llmApiKey" type="password" placeholder="sk-..." />
-              <p class="hint">仅保存在当前浏览器 localStorage；请避免在不可信设备中使用。</p>
+              <input id="llmApiKey" type="password" placeholder="sk-...（本地 Ollama 可留空）" />
+              <p class="hint">仅保存在当前浏览器 localStorage；请避免在不可信设备中使用。本地 Ollama / 无鉴权网关可留空。</p>
             </div>
             <div class="field">
               <label for="llmModel">Model</label>
               <input id="llmModel" type="text" placeholder="gpt-4.1-mini" />
-              <p class="hint">按你的供应商模型名填写。</p>
+              <p class="hint">按你的供应商模型名填写；例如 Ollama 可填 `qwen2.5:14b`、`llama3.1:8b`。</p>
             </div>
           </div>
           <div class="field-grid cols-3" style="margin-top: 14px">
@@ -1086,6 +1088,10 @@ output_schema: {output_schema}`,
           system: `Role: Spec Lawyer (3GPP/GSMA/GCF strict).
 Task: Review each RequirementItem for missing state-machine conditions, timers, cause codes, message-level observability, and internal consistency.
 Return JSON issues list per req_id.
+Quality rules:
+- For EACH req_id, write requirement-specific issues with protocol/state-machine focus.
+- open_questions are optional for spec review; only add them when there is concrete missing information that product/test owners can answer directly.
+- Do not pad every req_id with generic open_questions just to fill the field.
 All human-readable natural language inside JSON values must be written in Simplified Chinese. Keep schema keys, req_id, and score field names unchanged. 最终以“简体中文”输出。
 
 Scoring rubric:
@@ -1617,6 +1623,31 @@ return_schema: {return_schema}`,
         return output;
       }
 
+      function looksLikeLocalOllamaBaseUrl(baseUrl) {
+        try {
+          const url = new URL(baseUrl);
+          const host = String(url.hostname || "").toLowerCase();
+          const isLocalHost = host === "127.0.0.1" || host === "localhost" || host === "::1";
+          return isLocalHost && String(url.port || "") === "11434";
+        } catch (error) {
+          return false;
+        }
+      }
+
+      function resolveChatCompletionsEndpoint(baseUrlRaw) {
+        const baseUrl = String(baseUrlRaw || "").trim().replace(/\/+$/, "");
+        if (!baseUrl) {
+          return "https://api.openai.com/v1/chat/completions";
+        }
+        if (/\/chat\/completions$/i.test(baseUrl)) {
+          return baseUrl;
+        }
+        if (looksLikeLocalOllamaBaseUrl(baseUrl) && !/\/v1$/i.test(baseUrl)) {
+          return `${baseUrl}/v1/chat/completions`;
+        }
+        return `${baseUrl}/chat/completions`;
+      }
+
       function saveSession() {
         const payload = {
           llm: { ...state.llm },
@@ -1786,11 +1817,48 @@ return_schema: {return_schema}`,
             const reqId = canonicalizeReqId(item.req_id || item.requirement_id || item.requirement || fallbackReqIds[index] || fallbackReqIds[0], requirements, index);
             return {
               req_id: reqId,
-              issues: normalizeLooseStringList(item.issues || item.findings || item.risks),
-              rewrite_suggestion: normalizeLooseText(item.rewrite_suggestion || item.rewrite || item.suggestion || item.recommendation),
+              issues: normalizeLooseStringList(
+                item.issues
+                ?? item.issue
+                ?? item.findings
+                ?? item.finding
+                ?? item.risks
+                ?? item.risk
+                ?? item.problems
+                ?? item.problem
+                ?? item.concerns
+                ?? item.concern
+              ),
+              rewrite_suggestion: normalizeLooseText(
+                item.rewrite_suggestion
+                ?? item.rewriteSuggestion
+                ?? item.rewrite
+                ?? item.suggestion
+                ?? item.recommendation
+                ?? item.recommendations
+              ),
               scores: item.scores && typeof item.scores === "object" ? item.scores : {},
-              must_observe: normalizeLooseStringList(item.must_observe || item.must_capture || item.observability),
-              open_questions: normalizeLooseStringList(item.open_questions || item.questions || item.follow_ups || item.followups),
+              must_observe: normalizeLooseStringList(
+                item.must_observe
+                ?? item.mustObserve
+                ?? item.must_capture
+                ?? item.mustCapture
+                ?? item.observability
+                ?? item.evidence
+                ?? item.must_watch
+              ),
+              open_questions: normalizeLooseStringList(
+                item.open_questions
+                ?? item.openQuestions
+                ?? item.open_question
+                ?? item.questions
+                ?? item.question
+                ?? item.clarifications
+                ?? item.clarification_questions
+                ?? item.follow_ups
+                ?? item.followups
+                ?? item.follow_up
+              ),
             };
           });
         return { reviews };
@@ -1984,9 +2052,9 @@ return_schema: {return_schema}`,
 
       function normalizePersonaReviews(personaReviews, requirements = []) {
         return {
-          spec: ensurePersonaCoverageForAllRequirements(normalizePersonaReviewData(personaReviews?.spec || {}, requirements), requirements, "spec"),
-          carrier: ensurePersonaCoverageForAllRequirements(normalizePersonaReviewData(personaReviews?.carrier || {}, requirements), requirements, "carrier"),
-          ux: ensurePersonaCoverageForAllRequirements(normalizePersonaReviewData(personaReviews?.ux || {}, requirements), requirements, "ux"),
+          spec: normalizePersonaReviewData(personaReviews?.spec || {}, requirements),
+          carrier: normalizePersonaReviewData(personaReviews?.carrier || {}, requirements),
+          ux: normalizePersonaReviewData(personaReviews?.ux || {}, requirements),
         };
       }
 
@@ -2004,22 +2072,32 @@ return_schema: {return_schema}`,
         const fallback = PERSONA_FALLBACK_CONFIG[personaKey] || PERSONA_FALLBACK_CONFIG.spec;
         const reqMap = new Map((requirements || []).map((req) => [canonicalizeReqId(req?.req_id || "", requirements), req]));
         const reviews = normalized.reviews || [];
+        const requirePerReqQuestion = personaKey === "carrier" || personaKey === "ux";
 
         if (!reviews.length) {
           throw new Error(`${personaKey} review 为空`);
         }
 
+        const expectedReqIds = new Set((requirements || []).map((req, index) => canonicalizeReqId(req?.req_id || "", requirements, index)));
+        const coveredReqIds = new Set();
+
         reviews.forEach((review, index) => {
           const reqId = canonicalizeReqId(review.req_id, requirements, index);
+          coveredReqIds.add(reqId);
           const issues = normalizeLooseStringList(review.issues || []);
           const questions = normalizeLooseStringList(review.open_questions || []);
           if (!issues.length) {
             throw new Error(`${personaKey} review 缺少 issues: ${reqId}`);
           }
-          if (!questions.length) {
+          if (requirePerReqQuestion && !questions.length) {
             throw new Error(`${personaKey} review 缺少 open_questions: ${reqId}`);
           }
         });
+
+        const missingReqIds = Array.from(expectedReqIds).filter((reqId) => !coveredReqIds.has(reqId));
+        if (missingReqIds.length) {
+          throw new Error(`${personaKey} review 缺少需求覆盖: ${missingReqIds.join(", ")}`);
+        }
 
         if (personaKey === "carrier" || personaKey === "ux") {
           const issueSignatures = new Set();
@@ -2703,19 +2781,20 @@ return_schema: {return_schema}`,
 
       async function callChatCompletions(systemPrompt, userPrompt) {
         syncInputsToLlmConfig();
-        if (!state.llm.apiKey) throw new Error("请先填写 API Key");
         if (!state.llm.model) throw new Error("请先填写 Model");
-        const baseUrl = String(state.llm.baseUrl || "").replace(/\/+$/, "");
-        const endpoint = `${baseUrl}/chat/completions`;
+        const endpoint = resolveChatCompletionsEndpoint(state.llm.baseUrl || "");
         const controller = new AbortController();
         const timer = window.setTimeout(() => controller.abort(new Error("LLM 请求超时")), Math.max(10000, Number(state.llm.timeoutMs || 180000)));
         try {
+          const headers = {
+            "Content-Type": "application/json",
+          };
+          if (state.llm.apiKey) {
+            headers.Authorization = `Bearer ${state.llm.apiKey}`;
+          }
           const resp = await fetch(endpoint, {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${state.llm.apiKey}`,
-            },
+            headers,
             signal: controller.signal,
             body: JSON.stringify({
               model: state.llm.model,
@@ -2806,7 +2885,11 @@ return_schema: {return_schema}`,
             return data;
           } catch (error) {
             repairFeedback = `上一版输出存在问题：${error.message || error}。请严格只返回满足 schema 的 JSON，不要输出任何解释。`;
-            logActivity(`${label}: 结构化解析失败，第 ${attempt} 次，原因：${error.message || error}`, attempt > retries && fallback === undefined ? "error" : "warn");
+            if (attempt > retries) {
+              logActivity(`${label}: 最终未通过结构校验，原因：${error.message || error}`, fallback === undefined ? "error" : "warn");
+            } else {
+              logActivity(`${label}: 返回结果不完整，正在自动修复重试（第 ${attempt} 次），原因：${error.message || error}`, "warn");
+            }
             if (attempt > retries) {
               if (fallback !== undefined) {
                 logActivity(`${label}: 启用本地回退结果`, "warn");
@@ -2847,8 +2930,6 @@ return_schema: {return_schema}`,
       }
 
       async function runTriPersonaReviews(requirements) {
-        const fallbackFactory = (personaKey) => buildPersonaFallbackReviews(personaKey, requirements);
-
         const sharedVariables = {
           requirements_json: JSON.stringify(requirements, null, 0),
           history_risk_json: JSON.stringify([], null, 0),
@@ -2861,7 +2942,6 @@ return_schema: {return_schema}`,
             prompt: PROMPTS.reviewSpec,
             variables: sharedVariables,
             validate: (data) => validatePersonaReviewQuality(data, requirements, "spec"),
-            fallback: fallbackFactory("spec"),
             retries: 3,
           }),
           runStructuredAgent({
@@ -2869,7 +2949,6 @@ return_schema: {return_schema}`,
             prompt: PROMPTS.reviewCarrier,
             variables: sharedVariables,
             validate: (data) => validatePersonaReviewQuality(data, requirements, "carrier"),
-            fallback: fallbackFactory("carrier"),
             retries: 3,
           }),
           runStructuredAgent({
@@ -2877,7 +2956,6 @@ return_schema: {return_schema}`,
             prompt: PROMPTS.reviewUx,
             variables: sharedVariables,
             validate: (data) => validatePersonaReviewQuality(data, requirements, "ux"),
-            fallback: fallbackFactory("ux"),
             retries: 3,
           }),
         ]);
@@ -3239,10 +3317,12 @@ return_schema: {return_schema}`,
               .join("")}</tbody></table>`
           : "<p>无</p>";
 
-        return `<!DOCTYPE html>
+        return `﻿<!DOCTYPE html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta http-equiv="Content-Language" content="zh-CN" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>${esc(title)} - 测试设计文档</title>
     <style>
