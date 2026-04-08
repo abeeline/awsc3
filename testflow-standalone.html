@@ -1435,6 +1435,10 @@ return_schema: {return_schema}`,
         return text ? [text] : [];
       }
 
+      function listJoin(value, separator = " / ") {
+        return normalizeLooseStringList(value).join(separator);
+      }
+
       function canonicalizeReqId(value, requirements = [], fallbackIndex = 0) {
         const text = normalizeLooseText(value);
         const reqIds = (requirements || []).map((item) => normalizeLooseText(item?.req_id || "")).filter(Boolean);
@@ -1448,6 +1452,81 @@ return_schema: {return_schema}`,
           return known || extractedId;
         }
         return reqIds[fallbackIndex] || reqIds[0] || text || `REQ-${String(fallbackIndex + 1).padStart(3, "0")}`;
+      }
+
+      function normalizeRequirementItem(item, fallback = {}, index = 0) {
+        const raw = item && typeof item === "object" ? item : {};
+        const base = fallback && typeof fallback === "object" ? fallback : {};
+        const rawSource = raw.source && typeof raw.source === "object" ? raw.source : {};
+        const baseSource = base.source && typeof base.source === "object" ? base.source : {};
+        const rawAcceptance = raw.acceptance && typeof raw.acceptance === "object" ? raw.acceptance : {};
+        const baseAcceptance = base.acceptance && typeof base.acceptance === "object" ? base.acceptance : {};
+        const rawObservability = raw.observability && typeof raw.observability === "object" ? raw.observability : {};
+        const baseObservability = base.observability && typeof base.observability === "object" ? base.observability : {};
+
+        return {
+          ...base,
+          ...raw,
+          req_id: normalizeLooseText(raw.req_id || base.req_id || `REQ-${String(index + 1).padStart(3, "0")}`),
+          title: normalizeLooseText(raw.title || base.title || `需求${index + 1}`),
+          source: {
+            ...baseSource,
+            ...rawSource,
+            type: normalizeLooseText(rawSource.type || baseSource.type || "PRD") || "PRD",
+            doc_id: normalizeLooseText(rawSource.doc_id || rawSource.docId || baseSource.doc_id || baseSource.docId || "USER_INPUT") || "USER_INPUT",
+            section: normalizeLooseText(rawSource.section || baseSource.section || "N/A") || "N/A",
+            lang: normalizeLooseText(rawSource.lang || baseSource.lang || "mixed") || "mixed",
+            evidence_refs: normalizeLooseStringList(rawSource.evidence_refs ?? rawSource.evidenceRefs ?? baseSource.evidence_refs ?? baseSource.evidenceRefs),
+          },
+          feature: normalizeLooseText(raw.feature || base.feature || "MODEM_SYSTEM") || "MODEM_SYSTEM",
+          rat_scope: normalizeLooseStringList(raw.rat_scope ?? raw.ratScope ?? base.rat_scope ?? base.ratScope),
+          preconditions: normalizeLooseStringList(raw.preconditions ?? raw.precondition ?? base.preconditions ?? base.precondition),
+          trigger: normalizeLooseStringList(raw.trigger ?? raw.triggers ?? base.trigger ?? base.triggers),
+          expected: normalizeLooseStringList(raw.expected ?? raw.expectations ?? raw.expectation ?? base.expected ?? base.expectations ?? base.expectation),
+          acceptance: {
+            ...baseAcceptance,
+            ...rawAcceptance,
+            pass_fail: normalizeLooseStringList(rawAcceptance.pass_fail ?? rawAcceptance.passFail ?? baseAcceptance.pass_fail ?? baseAcceptance.passFail),
+            kpi: normalizeLooseStringList(rawAcceptance.kpi ?? rawAcceptance.kpis ?? baseAcceptance.kpi ?? baseAcceptance.kpis),
+          },
+          constraints: normalizeLooseStringList(raw.constraints ?? raw.constraint ?? base.constraints ?? base.constraint),
+          observability: {
+            ...baseObservability,
+            ...rawObservability,
+            signals: normalizeLooseStringList(rawObservability.signals ?? rawObservability.signal ?? baseObservability.signals ?? baseObservability.signal),
+            logs: normalizeLooseStringList(rawObservability.logs ?? rawObservability.log ?? baseObservability.logs ?? baseObservability.log),
+            counters: normalizeLooseStringList(rawObservability.counters ?? rawObservability.counter ?? baseObservability.counters ?? baseObservability.counter),
+            must_capture: normalizeLooseStringList(rawObservability.must_capture ?? rawObservability.mustCapture ?? baseObservability.must_capture ?? baseObservability.mustCapture),
+          },
+          priority: normalizeLooseText(raw.priority || base.priority || "P1") || "P1",
+          open_questions: normalizeLooseStringList(raw.open_questions ?? raw.openQuestions ?? base.open_questions ?? base.openQuestions),
+          assumptions: normalizeLooseStringList(raw.assumptions ?? raw.assumption ?? base.assumptions ?? base.assumption),
+          persona_sources: normalizeLooseStringList(raw.persona_sources ?? raw.personaSources ?? base.persona_sources ?? base.personaSources),
+        };
+      }
+
+      function normalizeRequirementList(items, seedRequirements = []) {
+        const seeds = Array.isArray(seedRequirements) ? seedRequirements : [];
+        const byReqId = new Map(seeds.map((seed) => [normalizeLooseText(seed?.req_id || ""), seed]));
+        const rawItems = Array.isArray(items) ? items : [];
+        return rawItems
+          .filter((item) => item && typeof item === "object")
+          .map((item, index) => {
+            const reqId = normalizeLooseText(item?.req_id || "");
+            const fallback = byReqId.get(reqId) || seeds[index] || {};
+            return normalizeRequirementItem(item, fallback, index);
+          });
+      }
+
+      function normalizeRequirementSpec(data, seedRequirements = []) {
+        const raw = data && typeof data === "object" ? data : {};
+        return {
+          ...raw,
+          final_requirements: normalizeRequirementList(raw.final_requirements || [], seedRequirements),
+          conflicts: Array.isArray(raw.conflicts) ? raw.conflicts : [],
+          questions_to_ask: normalizeLooseStringList(raw.questions_to_ask ?? raw.questionsToAsk),
+          assumptions: normalizeLooseStringList(raw.assumptions),
+        };
       }
 
       function xmlEsc(value) {
@@ -1686,8 +1765,8 @@ return_schema: {return_schema}`,
           setSelectedTestEnvironments(data.form?.testEnvironments || []);
           state.round = Number(data.workflow?.round || 0);
           state.currentOpenQuestions = Array.isArray(data.workflow?.currentOpenQuestions) ? data.workflow.currentOpenQuestions : [];
-          state.requirementSpec = data.workflow?.requirementSpec || null;
-          state.personaReviews = data.workflow?.personaReviews ? normalizePersonaReviews(data.workflow.personaReviews, data.workflow?.requirementSpec?.final_requirements || []) : null;
+          state.requirementSpec = data.workflow?.requirementSpec ? normalizeRequirementSpec(data.workflow.requirementSpec, []) : null;
+          state.personaReviews = data.workflow?.personaReviews ? normalizePersonaReviews(data.workflow.personaReviews, state.requirementSpec?.final_requirements || []) : null;
           state.requirementReviewHistory = data.workflow?.requirementReviewHistory || { rounds: [], answered_questions: [], answered_count: 0 };
           state.testDesignSpec = data.workflow?.testDesignSpec || null;
           state.testCaseSpec = data.workflow?.testCaseSpec || null;
@@ -1871,12 +1950,12 @@ return_schema: {return_schema}`,
       function buildRequirementReviewContext(req) {
         const parts = [
           req?.title,
-          ...(req?.preconditions || []),
-          ...(req?.trigger || []),
-          ...(req?.expected || []),
-          ...((req?.acceptance || {}).pass_fail || []),
-          ...((req?.acceptance || {}).kpi || []),
-          ...(req?.constraints || []),
+          ...normalizeLooseStringList(req?.preconditions),
+          ...normalizeLooseStringList(req?.trigger),
+          ...normalizeLooseStringList(req?.expected),
+          ...normalizeLooseStringList((req?.acceptance || {}).pass_fail),
+          ...normalizeLooseStringList((req?.acceptance || {}).kpi),
+          ...normalizeLooseStringList(req?.constraints),
         ];
         return normalizeLooseStringList(parts).join(" ").toLowerCase();
       }
@@ -2266,8 +2345,8 @@ return_schema: {return_schema}`,
       function extractReqMetrics(req) {
         const acc = req?.acceptance || {};
         const metrics = [];
-        if (Array.isArray(acc.pass_fail)) metrics.push(...acc.pass_fail);
-        if (Array.isArray(acc.kpi)) metrics.push(...acc.kpi);
+        metrics.push(...normalizeLooseStringList(acc.pass_fail));
+        metrics.push(...normalizeLooseStringList(acc.kpi));
         return metrics.map((item) => String(item)).filter(Boolean);
       }
 
@@ -2365,8 +2444,8 @@ return_schema: {return_schema}`,
           objective_id: `TO-${String(index + 1).padStart(3, "0")}`,
           linked_reqs: [req.req_id || `REQ-${String(index + 1).padStart(3, "0")}`],
           goal: req.title || `测试目标-${index + 1}`,
-          success_criteria: req?.acceptance?.pass_fail?.length ? req.acceptance.pass_fail : ["主流程成功", "异常可恢复"],
-          evidence: req?.observability?.must_capture?.length ? req.observability.must_capture : ["modem_log", "logcat"],
+          success_criteria: normalizeLooseStringList(req?.acceptance?.pass_fail).length ? normalizeLooseStringList(req?.acceptance?.pass_fail) : ["主流程成功", "异常可恢复"],
+          evidence: normalizeLooseStringList(req?.observability?.must_capture).length ? normalizeLooseStringList(req?.observability?.must_capture) : ["modem_log", "logcat"],
           priority: req.priority || "P1",
           risk_notes: "由需求自动补全目标",
         }));
@@ -2908,7 +2987,7 @@ return_schema: {return_schema}`,
 
       async function runReqParse(seedRequirements, reviewFeedback, productProfile) {
         const fallback = clone(seedRequirements);
-        const data = await runStructuredAgent({
+        const rawData = await runStructuredAgent({
           label: "需求解读",
           prompt: PROMPTS.reqParse,
           variables: {
@@ -2923,10 +3002,11 @@ return_schema: {return_schema}`,
           validate: validateRequirementList,
           fallback,
         });
+        const data = normalizeRequirementList(rawData, seedRequirements);
         if (data.length < seedRequirements.length) {
           const seen = new Set(data.filter((item) => item && item.req_id).map((item) => item.req_id));
-          seedRequirements.forEach((seed) => {
-            if (!seen.has(seed.req_id)) data.push(seed);
+          seedRequirements.forEach((seed, index) => {
+            if (!seen.has(seed.req_id)) data.push(normalizeRequirementItem(seed, seed, index));
           });
           logActivity("需求解读结果缺少部分条目，已用输入种子补齐覆盖。", "warn");
         }
@@ -3044,12 +3124,13 @@ return_schema: {return_schema}`,
           validate: validateSynthesis,
           fallback,
         });
-        (data.final_requirements || []).forEach((req) => {
+        const normalized = normalizeRequirementSpec(data, requirements);
+        (normalized.final_requirements || []).forEach((req) => {
           if (req && typeof req === "object") {
-            req.persona_sources = Array.isArray(req.persona_sources) && req.persona_sources.length ? req.persona_sources : ["PRD", "Carrier", "UX"];
+            req.persona_sources = normalizeLooseStringList(req.persona_sources).length ? normalizeLooseStringList(req.persona_sources) : ["PRD", "Carrier", "UX"];
           }
         });
-        return data;
+        return normalized;
       }
 
       async function generateRequirementRound(round) {
@@ -3329,7 +3410,7 @@ return_schema: {return_schema}`,
 
         const reqTable = reqs.length
           ? `<table><thead><tr><th>需求ID</th><th>标题</th><th>优先级</th><th>RAT范围</th><th>通过标准</th></tr></thead><tbody>${reqs
-              .map((req) => `<tr><td>${esc(req.req_id || "")}</td><td>${esc(req.title || "")}</td><td>${esc(req.priority || "")}</td><td>${esc((req.rat_scope || []).join("、"))}</td><td>${esc(((req.acceptance || {}).pass_fail || []).join(" / "))}</td></tr>`)
+              .map((req) => `<tr><td>${esc(req.req_id || "")}</td><td>${esc(req.title || "")}</td><td>${esc(req.priority || "")}</td><td>${esc(listJoin(req.rat_scope, "、"))}</td><td>${esc(listJoin((req.acceptance || {}).pass_fail, " / "))}</td></tr>`)
               .join("")}</tbody></table>`
           : "<p>无</p>";
 
@@ -3552,7 +3633,7 @@ return_schema: {return_schema}`,
           return;
         }
         const rows = reqs
-          .map((req) => `<tr><td>${esc(req.req_id || "")}</td><td>${esc(req.title || "")}</td><td>${esc(req.priority || "")}</td><td>${esc((req.rat_scope || []).join(", "))}</td><td>${esc((req.persona_sources || []).join(", "))}</td><td>${esc(((req.acceptance || {}).pass_fail || []).join(" / "))}</td></tr>`)
+          .map((req) => `<tr><td>${esc(req.req_id || "")}</td><td>${esc(req.title || "")}</td><td>${esc(req.priority || "")}</td><td>${esc(listJoin(req.rat_scope, ", "))}</td><td>${esc(listJoin(req.persona_sources, ", "))}</td><td>${esc(listJoin((req.acceptance || {}).pass_fail, " / "))}</td></tr>`)
           .join("");
         els.requirementSummary.innerHTML = `<div class="scroll-box"><table><thead><tr><th>需求ID</th><th>标题</th><th>优先级</th><th>RAT范围</th><th>评审来源</th><th>通过标准</th></tr></thead><tbody>${rows}</tbody></table></div><div style="height:12px"></div>${renderDocList(state.requirementSpec.questions_to_ask || [])}`;
       }
