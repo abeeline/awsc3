@@ -1107,6 +1107,8 @@ Task: Identify operator-acceptance risks, KPI-style pass/fail, must-test combos,
 Return JSON with acceptance-oriented recommendations.
 Hard quality rules:
 - For EACH req_id, write requirement-specific issues and open_questions. Do not reuse the same generic wording across different req_id.
+- Each review item MUST include all fields: req_id, issues, rewrite_suggestion, scores, must_observe, open_questions.
+- For Carrier review, issues must be a non-empty string array and open_questions must be a non-empty string array.
 - open_questions must be directly answerable by product/test owners, and must ask for concrete missing information such as KPI threshold, operator config combo, fallback trigger, timer, handover interruption budget, BWP/bandwidth combo, roaming behavior, business continuity expectation, or certification pitfall.
 - Avoid vague questions like “请确认运营商侧 KPI 门槛、业务组合和配置依赖” unless the requirement text itself is equally vague.
 - If one requirement is about fallback/reselection and another is about handover or BWP, their open_questions must be different in focus.
@@ -1122,6 +1124,8 @@ Propose red-line scenarios and self-healing expectations.
 Return JSON.
 Hard quality rules:
 - For EACH req_id, write requirement-specific issues and open_questions. Do not reuse the same generic wording across different req_id.
+- Each review item MUST include all fields: req_id, issues, rewrite_suggestion, scores, must_observe, open_questions.
+- For UX review, issues must be a non-empty string array and open_questions must be a non-empty string array.
 - open_questions must be directly answerable by product/test owners, and should ask for concrete user-facing expectations such as interruption duration, recovery time, service success rate, call/data continuity, UI prompt expectation, acceptable degradation, weak-signal behavior, or long-stability criteria.
 - Avoid vague questions like “请确认用户侧成功率、时延、稳定性与恢复预期” unless the requirement text itself is equally vague.
 - If one requirement is about fallback/reselection and another is about handover or BWP, their open_questions must be different in focus.
@@ -2929,36 +2933,93 @@ return_schema: {return_schema}`,
         return data;
       }
 
-      async function runTriPersonaReviews(requirements) {
+      async function runPersonaReviewAdaptive({ label, prompt, requirements, personaKey }) {
+        const validate = (data, scopedRequirements = requirements) => validatePersonaReviewQuality(data, scopedRequirements, personaKey);
         const sharedVariables = {
           requirements_json: JSON.stringify(requirements, null, 0),
           history_risk_json: JSON.stringify([], null, 0),
           return_schema: JSON.stringify(PERSONA_REVIEW_SCHEMA, null, 0),
         };
 
-        const [spec, carrier, ux] = await Promise.all([
-          runStructuredAgent({
+        try {
+          return await runStructuredAgent({
+            label,
+            prompt,
+            variables: sharedVariables,
+            validate: (data) => validate(data, requirements),
+            retries: 3,
+          });
+        } catch (error) {
+          if (!Array.isArray(requirements) || requirements.length <= 1) {
+            throw error;
+          }
+          logActivity(`${label}: 整批评审对当前模型过重，自动切换为逐条需求评审兼容模式。`, "warn");
+          const mergedReviews = [];
+          for (const req of requirements) {
+            const scopedRequirements = [req];
+            const reqId = normalizeLooseText(req?.req_id || "");
+            const scopedLabel = `${label}-${reqId || "single"}`;
+            const scopedData = await runStructuredAgent({
+              label: scopedLabel,
+              prompt,
+              variables: {
+                requirements_json: JSON.stringify(scopedRequirements, null, 0),
+                history_risk_json: JSON.stringify([], null, 0),
+                return_schema: JSON.stringify(PERSONA_REVIEW_SCHEMA, null, 0),
+              },
+              validate: (data) => validate(data, scopedRequirements),
+              retries: 2,
+            });
+            const normalized = normalizePersonaReviewData(scopedData, scopedRequirements);
+            mergedReviews.push(...(normalized.reviews || []));
+          }
+          return { reviews: mergedReviews };
+        }
+      }
+
+      async function runTriPersonaReviews(requirements) {
+        const reviewSpecs = [
+          {
             label: "规范评审",
             prompt: PROMPTS.reviewSpec,
-            variables: sharedVariables,
-            validate: (data) => validatePersonaReviewQuality(data, requirements, "spec"),
-            retries: 3,
-          }),
-          runStructuredAgent({
+            personaKey: "spec",
+          },
+          {
             label: "运营商评审",
             prompt: PROMPTS.reviewCarrier,
-            variables: sharedVariables,
-            validate: (data) => validatePersonaReviewQuality(data, requirements, "carrier"),
-            retries: 3,
-          }),
-          runStructuredAgent({
+            personaKey: "carrier",
+          },
+          {
             label: "现网体验评审",
             prompt: PROMPTS.reviewUx,
-            variables: sharedVariables,
-            validate: (data) => validatePersonaReviewQuality(data, requirements, "ux"),
-            retries: 3,
-          }),
-        ]);
+            personaKey: "ux",
+          },
+        ];
+
+        let spec;
+        let carrier;
+        let ux;
+
+        if (looksLikeLocalOllamaBaseUrl(state.llm.baseUrl || "")) {
+          logActivity("检测到本地 Ollama，三人评审自动切换为串行调用，降低并发压力。", "warn");
+          const outputs = [];
+          for (const reviewSpec of reviewSpecs) {
+            outputs.push(await runPersonaReviewAdaptive({
+              label: reviewSpec.label,
+              prompt: reviewSpec.prompt,
+              requirements,
+              personaKey: reviewSpec.personaKey,
+            }));
+          }
+          [spec, carrier, ux] = outputs;
+        } else {
+          [spec, carrier, ux] = await Promise.all(reviewSpecs.map((reviewSpec) => runPersonaReviewAdaptive({
+            label: reviewSpec.label,
+            prompt: reviewSpec.prompt,
+            requirements,
+            personaKey: reviewSpec.personaKey,
+          })));
+        }
 
         return normalizePersonaReviews({ spec, carrier, ux }, requirements);
       }
