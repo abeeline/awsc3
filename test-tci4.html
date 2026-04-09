@@ -698,6 +698,146 @@ NA-系统测试不能覆盖
             return sections;
         }
 
+        function parseOrderedAnalysisSolutionSections(text) {
+            const normalizedText = cleanText(text);
+            if (!normalizedText) return {};
+
+            const markers = [
+                { key: 'rootcause', patterns: [/\[\s*1\s*\.?\s*root\s*cause[^\]]*\]\s*[:：]\s*/i, /\[\s*1\s*\.?\s*rootcause[^\]]*\]\s*[:：]\s*/i] },
+                { key: 'resolution', patterns: [/\[\s*2\s*\.?\s*resolution[^\]]*\]\s*[:：]\s*/i] },
+                { key: 'testingsuggestion', patterns: [/\[\s*3\s*\.?\s*testing\s*suggestion[^\]]*\]\s*[:：]\s*/i, /\[\s*3\s*\.?\s*test\s*suggestion[^\]]*\]\s*[:：]\s*/i] },
+                { key: 'impactforcustomer', patterns: [/\[\s*4\s*\.?\s*impact\s*for\s*customer[^\]]*\]\s*[:：]\s*/i] },
+                { key: 'selftestitems', patterns: [/\[\s*5\s*\.?\s*self\s*test\s*items?[^\]]*\]\s*[:：]\s*/i] },
+                { key: 'reproducesteps', patterns: [/\[\s*6\s*\.?\s*reproduce\s*steps?[^\]]*\]\s*[:：]\s*/i] }
+            ];
+
+            const locatedMarkers = markers
+                .map((marker) => {
+                    let bestMatch = null;
+                    marker.patterns.forEach((pattern) => {
+                        const match = pattern.exec(normalizedText);
+                        if (match && (!bestMatch || match.index < bestMatch.index)) {
+                            bestMatch = match;
+                        }
+                    });
+                    if (!bestMatch) {
+                        return null;
+                    }
+                    return {
+                        key: marker.key,
+                        index: bestMatch.index,
+                        endIndex: bestMatch.index + bestMatch[0].length
+                    };
+                })
+                .filter(Boolean)
+                .sort((a, b) => a.index - b.index);
+
+            if (!locatedMarkers.length) {
+                return {};
+            }
+
+            const sections = {};
+            locatedMarkers.forEach((marker, index) => {
+                const endIndex = index + 1 < locatedMarkers.length ? locatedMarkers[index + 1].index : normalizedText.length;
+                const content = cleanText(normalizedText.slice(marker.endIndex, endIndex));
+                if (content) {
+                    sections[marker.key] = content;
+                }
+            });
+
+            return sections;
+        }
+
+        function getCompositeSectionValue(sections, aliases) {
+            const entries = Object.entries(sections || {});
+            if (!entries.length) return '';
+
+            const normalizedAliases = aliases.map(normalizeFieldLookupKey);
+
+            for (const alias of normalizedAliases) {
+                const exactMatch = entries.find(([key, value]) => key === alias && cleanText(value));
+                if (exactMatch) {
+                    return cleanText(exactMatch[1]);
+                }
+            }
+
+            for (const alias of normalizedAliases) {
+                const fuzzyMatch = entries.find(([key, value]) => key.includes(alias) && cleanText(value));
+                if (fuzzyMatch) {
+                    return cleanText(fuzzyMatch[1]);
+                }
+            }
+
+            return '';
+        }
+
+        function getAnalysisSolutionValue(fieldMap) {
+            return findFieldValueByAliases(fieldMap, [
+                'analysis_solution',
+                'analysis solution',
+                'analysissolution',
+                'cf_analysis_solution',
+                'cfanalysissolution'
+            ]);
+        }
+
+        function scoreCompositeSections(sections) {
+            const rootCause = getCompositeSectionValue(sections, ['root cause', 'rootcause', '根因']);
+            const resolution = getCompositeSectionValue(sections, ['resolution', '解决方案', 'solution']);
+            const testSuggestion = getCompositeSectionValue(sections, ['testing suggestion', 'test suggestion', 'testsuggestion', '测试建议']);
+            return [rootCause, resolution, testSuggestion].filter(Boolean).length;
+        }
+
+        function findBestCompositeField(fieldMap, preferredValue = '') {
+            if (preferredValue) {
+                const preferredSections = {
+                    ...parseBracketedSections(preferredValue),
+                    ...parseOrderedAnalysisSolutionSections(preferredValue)
+                };
+                const preferredScore = scoreCompositeSections(preferredSections);
+                if (preferredScore) {
+                    return {
+                        key: 'analysis_solution',
+                        sourceValue: cleanText(preferredValue),
+                        sections: preferredSections,
+                        score: preferredScore
+                    };
+                }
+            }
+
+            const entries = Object.entries(fieldMap || {});
+            let bestCandidate = null;
+
+            entries.forEach(([key, value]) => {
+                const text = cleanText(value);
+                if (!text || !text.includes('[')) {
+                    return;
+                }
+
+                const sections = parseBracketedSections(text);
+                if (!Object.keys(sections).length) {
+                    return;
+                }
+
+                const score = scoreCompositeSections(sections);
+
+                if (!score) {
+                    return;
+                }
+
+                if (!bestCandidate || score > bestCandidate.score || (score === bestCandidate.score && text.length > bestCandidate.sourceValue.length)) {
+                    bestCandidate = {
+                        key,
+                        sourceValue: text,
+                        sections,
+                        score
+                    };
+                }
+            });
+
+            return bestCandidate;
+        }
+
         function findImportantBugFields(fieldMap) {
             const directRootCause = findFieldValueByAliases(fieldMap, [
                 'root cause',
@@ -724,16 +864,18 @@ NA-系统测试不能覆盖
                 '回归建议'
             ]);
 
-            const compositeSections = rawResolution ? parseBracketedSections(rawResolution) : {};
-            const parsedRootCause = compositeSections.rootcause || compositeSections.rootcause1 || compositeSections.rootcause2 || '';
-            const parsedResolution = compositeSections.resolution || compositeSections.resolution1 || '';
-            const parsedTestSuggestion = compositeSections.testingsuggestion || compositeSections.testsuggestion || '';
+            const analysisSolutionValue = getAnalysisSolutionValue(fieldMap);
+            const compositeField = findBestCompositeField(fieldMap, analysisSolutionValue);
+            const compositeSections = compositeField?.sections || (rawResolution ? parseBracketedSections(rawResolution) : {});
+            const parsedRootCause = getCompositeSectionValue(compositeSections, ['root cause', 'rootcause', '根因']);
+            const parsedResolution = getCompositeSectionValue(compositeSections, ['resolution', '解决方案', 'solution']);
+            const parsedTestSuggestion = getCompositeSectionValue(compositeSections, ['testing suggestion', 'test suggestion', 'testsuggestion', '测试建议']);
 
             const rootCause = parsedRootCause
                 || (directRootCause && !isTimestampLikeValue(directRootCause) ? directRootCause : '');
 
-            const resolution = parsedResolution || rawResolution;
-            const testSuggestion = directTestSuggestion || parsedTestSuggestion;
+            const resolution = parsedResolution || compositeField?.sourceValue || rawResolution;
+            const testSuggestion = parsedTestSuggestion || directTestSuggestion;
 
             return {
                 rootCause,
