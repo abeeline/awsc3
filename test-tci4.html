@@ -1342,6 +1342,7 @@ Test Suggestion: ${analysisState.initialInputs.testSuggestion || '未识别'}
 
         function normalizeFinalReport(report) {
             const rawReferenceCase = report.referenceTestCase || {};
+            const rawInteractionSummary = report.interactionSummary || {};
             const fallbackSteps = Array.isArray(report.testCaseSuggestions)
                 ? report.testCaseSuggestions.map((item, index) => ({
                     step: cleanText(item.step || item.title || item.name || `步骤 ${index + 1}`),
@@ -1355,6 +1356,11 @@ Test Suggestion: ${analysisState.initialInputs.testSuggestion || '未识别'}
                 rootCauseAssessment: cleanText(report.rootCauseAssessment || ''),
                 rootCauseSummary: cleanText(report.rootCauseSummary || ''),
                 developerConfirmationNote: cleanText(report.developerConfirmationNote || report.rootCauseConfirmationNote || ''),
+                interactionSummary: {
+                    summary: cleanText(rawInteractionSummary.summary || rawInteractionSummary.overview || ''),
+                    keyPoints: Array.isArray(rawInteractionSummary.keyPoints) ? rawInteractionSummary.keyPoints.map(cleanText).filter(Boolean) : [],
+                    impact: Array.isArray(rawInteractionSummary.impact) ? rawInteractionSummary.impact.map(cleanText).filter(Boolean) : []
+                },
                 missedOpportunities: Array.isArray(report.missedOpportunities) ? report.missedOpportunities.map(cleanText).filter(Boolean) : [],
                 improvementActions: Array.isArray(report.improvementActions) ? report.improvementActions.map(cleanText).filter(Boolean) : [],
                 referenceTestCase: {
@@ -1402,6 +1408,11 @@ Test Suggestion: ${analysisState.initialInputs.testSuggestion || '未识别'}
   "rootCauseAssessment": "根因较明确 | 初步判断，仍需研发确认 | 信息不足，需研发确认",
   "rootCauseSummary": "基于 bug 全文、原始 RootCause、Resolution、Test Suggestion 综合形成的更完整根因分析，强调上下文、约束条件与导致漏失的关键链路",
   "developerConfirmationNote": "如果根因仍不够确定，明确说明还需要研发补充确认什么；如果已经较明确则返回空字符串",
+  "interactionSummary": {
+    "summary": "概括多轮问答中用户补充或澄清了哪些关键信息；如果没有新增信息，明确写“本轮问答未补充超出 Bug 原文的新信息”",
+    "keyPoints": ["列出 1-4 条用户在问答中补充或确认的关键事实"],
+    "impact": ["说明这些补充信息如何影响根因判断、改进动作或参考测试用例设计"]
+  },
   "missedOpportunities": ["列出 2-4 个最关键的漏失环节"],
   "improvementActions": ["列出 3 条可执行的改进动作"],
   "referenceTestCase": {
@@ -1425,6 +1436,7 @@ Test Suggestion: ${analysisState.initialInputs.testSuggestion || '未识别'}
 约束：
 - 主结论必须围绕“是否值得内部改进以及改什么”，不要把内部标签当作主输出。
 - 报告中的根因分析不要简单复述 Bug 原始 RootCause，而要结合完整 bug 上下文、Resolution、Test Suggestion 和对话内容，给出更完整、更贴近实际的综合根因分析。
+- interactionSummary 必须总结“问答阶段新增/澄清的信息”以及其对结论的影响，不要简单重复 Bug 原始字段，也不要直接转录原始聊天记录。
 - 如果问题与客户差异、第三方限制、版本口径差异相关，也要判断内部是否仍可在风险识别、隔离、回归、前置检查上补强。
 - missedOpportunities 要写成能力或流程层面的遗漏，如需求澄清、测试策略、场景覆盖、测试数据、环境组合、兼容性联调、回归准入、自动化/监控。
 - improvementActions 必须具体、可执行、可落地。
@@ -1446,7 +1458,7 @@ ${visibleConversation}`;
                 const rawResult = await callModelAPI({
                     messages: [{ role: 'user', content: prompt }],
                     temperature: 0.1,
-                    maxTokens: 2500
+                    maxTokens: 3200
                 });
 
                 const parsedReport = normalizeFinalReport(extractJsonBlock(rawResult));
@@ -1521,6 +1533,10 @@ ${visibleConversation}`;
         function generateReport(report) {
             const { initialInputs, modelConfig } = analysisState;
             const bugSummary = initialInputs.importedBug ? buildBugContextText(initialInputs.importedBug) : '';
+            const hasInteractionSummary = analysisState.turnCount > 0
+                || report.interactionSummary.summary
+                || report.interactionSummary.keyPoints.length
+                || report.interactionSummary.impact.length;
 
             let modelConfigHtml = `<li><strong>模型类型:</strong> ${escapeHtml(modelConfig.modelType)}</li><li><strong>API Endpoint:</strong> ${escapeHtml(modelConfig.endpoint)}</li>`;
             if (modelConfig.modelName) {
@@ -1554,6 +1570,13 @@ ${visibleConversation}`;
                 ${report.rootCauseAssessment ? `<p><strong>根因判断状态:</strong> ${escapeHtml(report.rootCauseAssessment)}</p>` : ''}
                 ${report.rootCauseSummary ? `<p><strong>AI 综合根因分析:</strong> ${escapeHtml(report.rootCauseSummary)}</p>` : ''}
                 ${report.developerConfirmationNote ? `<p><strong>需进一步与研发确认:</strong> ${escapeHtml(report.developerConfirmationNote)}</p>` : ''}
+
+                ${hasInteractionSummary ? `
+                    <h5>问答补充信息摘要</h5>
+                    ${report.interactionSummary.summary ? `<p><strong>摘要:</strong> ${escapeHtml(report.interactionSummary.summary)}</p>` : ''}
+                    ${report.interactionSummary.keyPoints.length ? `<p><strong>补充/澄清的关键事实:</strong></p>${renderSimpleList(report.interactionSummary.keyPoints)}` : ''}
+                    ${report.interactionSummary.impact.length ? `<p><strong>对最终判断的影响:</strong></p>${renderSimpleList(report.interactionSummary.impact)}` : ''}
+                ` : ''}
 
                 <h5>最值得补强的漏失环节</h5>
                 ${renderSimpleList(report.missedOpportunities, 'AI 未识别出明确的漏失环节。')}
