@@ -73,65 +73,38 @@
                                 <input id="bugzilla-url" type="url" class="flex-1 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" placeholder="粘贴 Bugzilla 问题链接，例如 https://bugzilla.example.com/show_bug.cgi?id=12345">
                                 <button id="fetch-bugzilla-btn" type="button" class="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-blue-700 transition-colors">抓取问题详情</button>
                             </div>
-                            <p class="mt-2 text-xs text-slate-600">会优先尝试 Bugzilla REST 接口，再回退到页面 HTML 解析。若浏览器因登录态或跨域限制无法直连，请继续使用下面的“原始内容补充”。</p>
+                            <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label for="bugzilla-api-base" class="block text-xs font-medium text-slate-700">Bugzilla API 基址 (可选)</label>
+                                    <input id="bugzilla-api-base" type="text" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" placeholder="例如 https://bugzilla.example.com/rest">
+                                </div>
+                                <div>
+                                    <label for="bugzilla-api-key" class="block text-xs font-medium text-slate-700">Bugzilla API Key (可选)</label>
+                                    <input id="bugzilla-api-key" type="password" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" placeholder="用于通过 REST API 拉取详情">
+                                </div>
+                            </div>
+                            <p class="mt-2 text-xs text-slate-600">会优先尝试 Bugzilla REST API。若填写了 API Key，会优先走 API 鉴权方式；若仍失败，再回退页面解析。当前页面采用“仅基于自动导入信息分析”的模式，需先成功导入 Bug 才能继续。</p>
                             <div id="bugzilla-status" class="hidden mt-3 rounded-lg px-3 py-2 text-sm"></div>
                         </div>
 
                         <div id="bug-preview-card" class="hidden rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-4">
                             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                                 <div>
-                                    <h3 class="text-sm font-semibold text-slate-800">已导入 Bugzilla 关键信息</h3>
+                                    <h3 class="text-sm font-semibold text-slate-800">已导入 Bugzilla 完整信息</h3>
                                     <p id="bug-preview-title" class="text-sm text-slate-600 mt-1"></p>
                                 </div>
                                 <span id="bug-preview-source" class="inline-flex items-center rounded-full bg-slate-200 px-3 py-1 text-xs font-medium text-slate-700"></span>
                             </div>
-                            <div id="bug-preview-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm"></div>
                             <div>
-                                <p class="text-sm font-medium text-slate-700">关键评论摘录</p>
+                                <p class="text-sm font-medium text-slate-700">完整字段列表</p>
+                                <div id="bug-preview-grid" class="mt-2 max-h-80 overflow-auto rounded-lg border border-slate-200 bg-white p-3 font-mono text-xs leading-6 text-slate-700 whitespace-pre-wrap"></div>
+                            </div>
+                            <div>
+                                <p class="text-sm font-medium text-slate-700">完整评论列表</p>
                                 <div id="bug-comments-preview" class="mt-2 space-y-2"></div>
                             </div>
                         </div>
 
-                        <div>
-                            <label for="manual-raw-context" class="block text-sm font-medium text-slate-700">Bug 原始内容补充 (可选)</label>
-                            <textarea id="manual-raw-context" rows="5" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" placeholder="如果链接无法直接抓取，可粘贴 Bugzilla 页面文本、rootcause、关键评论、复现路径等。"></textarea>
-                        </div>
-
-                        <div>
-                            <label for="problem-desc" class="block text-sm font-medium text-slate-700">问题描述 / 分析背景</label>
-                            <textarea id="problem-desc" rows="4" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" placeholder="可手动补充业务影响、复现范围、客户反馈、修复背景等。若已抓取 Bugzilla，这里只需补充页面里没有的信息。"></textarea>
-                        </div>
-
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                                <label for="root-cause-initial" class="block text-sm font-medium text-slate-700">初步 RootCause (可选)</label>
-                                <input type="text" id="root-cause-initial" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" placeholder="例如：测试场景遗漏、需求理解偏差、环境组合未覆盖">
-                            </div>
-                            <div>
-                                <label for="problem-version" class="block text-sm font-medium text-slate-700">问题版本</label>
-                                <input type="text" id="problem-version" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" placeholder="例如：v1.2.3、Sprint 23、客户版本 A">
-                            </div>
-                        </div>
-
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                                <label for="discovery-phase" class="block text-sm font-medium text-slate-700">发现阶段</label>
-                                <select id="discovery-phase" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-                                    <option>UAT (用户验收测试)</option>
-                                    <option>灰度环境</option>
-                                    <option selected>线上生产环境</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label for="severity-level" class="block text-sm font-medium text-slate-700">严重等级</label>
-                                <select id="severity-level" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-                                    <option>致命 (Blocker)</option>
-                                    <option selected>严重 (Critical)</option>
-                                    <option>一般 (Major)</option>
-                                    <option>轻微 (Minor)</option>
-                                </select>
-                            </div>
-                        </div>
                     </div>
                 </div>
 
@@ -282,6 +255,8 @@ NA-系统测试不能覆盖
         const sendBtn = document.getElementById('send-btn');
         const loadingIndicator = document.getElementById('loading-indicator');
         const bugzillaUrlInput = document.getElementById('bugzilla-url');
+        const bugzillaApiBaseInput = document.getElementById('bugzilla-api-base');
+        const bugzillaApiKeyInput = document.getElementById('bugzilla-api-key');
         const fetchBugzillaBtn = document.getElementById('fetch-bugzilla-btn');
         const bugzillaStatus = document.getElementById('bugzilla-status');
         const bugPreviewCard = document.getElementById('bug-preview-card');
@@ -297,7 +272,8 @@ NA-系统测试不能覆盖
             turnCount: 0,
             bugImport: {
                 data: null,
-                lastError: null
+                lastError: null,
+                fullContext: ''
             }
         };
 
@@ -396,6 +372,48 @@ NA-系统测试不能覆盖
             }
         }
 
+        function normalizeBugzillaApiBase(rawBase) {
+            const trimmed = String(rawBase || '').trim().replace(/\/$/, '');
+            if (!trimmed) return '';
+            const directRestMatch = trimmed.match(/^(https?:\/\/.+?\/rest(?:\.cgi)?)(?:\/.*)?$/i);
+            if (directRestMatch) {
+                return directRestMatch[1];
+            }
+            return `${trimmed}/rest`;
+        }
+
+        function uniqueList(items) {
+            return Array.from(new Set(items.filter(Boolean)));
+        }
+
+        function joinUrl(base, path) {
+            return `${base.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
+        }
+
+        function deriveBugzillaApiBases(rawUrl, manualApiBase = '') {
+            const candidates = [];
+            const normalizedManualBase = normalizeBugzillaApiBase(manualApiBase);
+            if (normalizedManualBase) {
+                candidates.push(normalizedManualBase);
+            }
+
+            try {
+                const parsedUrl = new URL(rawUrl);
+                const pathname = parsedUrl.pathname || '';
+                const markerMatch = pathname.match(/^(.*?)(?:\/show_bug\.cgi|\/rest(?:\.cgi)?(?:\/.*)?|\/jsonrpc\.cgi|\/xmlrpc\.cgi)(?:$|\/)/i);
+                const derivedPrefix = markerMatch
+                    ? markerMatch[1]
+                    : pathname.includes('/') ? pathname.replace(/\/[^/]*$/, '') : '';
+                const prefix = derivedPrefix === '/' ? '' : derivedPrefix;
+                candidates.push(`${parsedUrl.origin}${prefix}/rest`);
+                candidates.push(`${parsedUrl.origin}${prefix}/rest.cgi`);
+            } catch (error) {
+                return uniqueList(candidates);
+            }
+
+            return uniqueList(candidates.map(normalizeBugzillaApiBase));
+        }
+
         function normalizeBugzillaFieldLabel(label) {
             return cleanText(label)
                 .replace(/[：:]+$/, '')
@@ -425,6 +443,16 @@ NA-系统测试不能覆盖
             return '';
         }
 
+        function findFieldValueByKeywords(fieldMap, keywords) {
+            for (const [key, value] of Object.entries(fieldMap || {})) {
+                const normalized = key.toLowerCase();
+                if (keywords.some((keyword) => normalized.includes(keyword))) {
+                    return cleanText(value);
+                }
+            }
+            return '';
+        }
+
         function collectFieldMapFromDocument(doc) {
             const fieldMap = {};
 
@@ -441,7 +469,7 @@ NA-系统测试不能覆盖
                 if (cells.length >= 2) {
                     const label = normalizeBugzillaFieldLabel(cells[0].textContent);
                     const value = cleanText(cells[1].textContent);
-                    if (label && value && value.length < 400) {
+                    if (label && value) {
                         fieldMap[label] = value;
                     }
                 }
@@ -452,7 +480,7 @@ NA-系统测试不能覆盖
                 if (dd && dd.tagName.toLowerCase() === 'dd') {
                     const label = normalizeBugzillaFieldLabel(dt.textContent);
                     const value = cleanText(dd.textContent);
-                    if (label && value && value.length < 400) {
+                    if (label && value) {
                         fieldMap[label] = value;
                     }
                 }
@@ -491,8 +519,7 @@ NA-系统测试不能覆盖
                     const text = cleanText(node.textContent);
                     return { author, time, text };
                 })
-                .filter((comment) => comment.text)
-                .slice(0, 20);
+                .filter((comment) => comment.text);
         }
 
         function buildRestBugData(bugPayload, commentsPayload, rawUrl, bugId) {
@@ -504,7 +531,7 @@ NA-系统测试不能覆盖
             const fieldMap = {};
             Object.entries(bug).forEach(([key, value]) => {
                 const formatted = formatFieldValue(value);
-                if (formatted && formatted.length < 500) {
+                if (formatted) {
                     fieldMap[key] = formatted;
                 }
             });
@@ -516,8 +543,7 @@ NA-系统测试不能覆盖
                     time: cleanText(comment.time || comment.creation_time || ''),
                     text: cleanText(comment.text || comment.body || '')
                 }))
-                .filter((comment) => comment.text)
-                .slice(0, 20);
+                .filter((comment) => comment.text);
 
             return {
                 bugId: String(bug.id || bugId || ''),
@@ -608,34 +634,61 @@ NA-系统测试不能覆盖
             return `${cleaned.slice(0, maxLength).trim()}...`;
         }
 
+        function buildFieldLines(fieldMap) {
+            return Object.entries(fieldMap || {})
+                .filter(([, value]) => value)
+                .sort(([keyA], [keyB]) => keyA.localeCompare(keyB, 'zh-CN'))
+                .map(([key, value]) => `${key}: ${cleanText(value)}`);
+        }
+
+        function buildCommentLines(comments) {
+            return (comments || []).map((comment, index) => {
+                const header = `评论${index + 1}${comment.author ? ` - ${comment.author}` : ''}${comment.time ? ` (${comment.time})` : ''}`;
+                return `${header}\n${cleanText(comment.text)}`;
+            });
+        }
+
+        function buildBugContextText(bugData) {
+            if (!bugData) {
+                return '未导入 Bugzilla 详情。';
+            }
+
+            const overviewLines = [
+                bugData.url ? `Bug 链接: ${bugData.url}` : '',
+                bugData.bugId ? `Bug ID: ${bugData.bugId}` : '',
+                bugData.summary ? `摘要: ${bugData.summary}` : '',
+                bugData.status ? `状态: ${bugData.status}` : '',
+                bugData.severity ? `严重级别: ${bugData.severity}` : '',
+                bugData.priority ? `优先级: ${bugData.priority}` : '',
+                bugData.version ? `版本: ${bugData.version}` : '',
+                bugData.component ? `组件: ${bugData.component}` : '',
+                bugData.assignee ? `负责人: ${bugData.assignee}` : '',
+                bugData.reporter ? `提交人: ${bugData.reporter}` : '',
+                bugData.rootCause ? `RootCause: ${bugData.rootCause}` : '',
+                bugData.source ? `数据来源: ${bugData.source}` : ''
+            ].filter(Boolean);
+
+            const fieldLines = buildFieldLines(bugData.fieldMap);
+            const commentLines = buildCommentLines(bugData.comments);
+
+            return [
+                overviewLines.join('\n'),
+                fieldLines.length ? `全部字段:\n${fieldLines.join('\n')}` : '',
+                commentLines.length ? `全部评论:\n${commentLines.join('\n\n')}` : ''
+            ].filter(Boolean).join('\n\n');
+        }
+
         function renderBugPreview(data) {
             bugPreviewCard.classList.remove('hidden');
             bugPreviewTitle.textContent = data.summary ? `${data.summary}${data.bugId ? ` (Bug ${data.bugId})` : ''}` : `Bug ${data.bugId || ''}`;
             bugPreviewSource.textContent = data.source || '已导入';
 
-            const previewFields = [
-                ['状态', data.status],
-                ['严重级别', data.severity],
-                ['优先级', data.priority],
-                ['版本', data.version],
-                ['组件', data.component],
-                ['负责人', data.assignee],
-                ['提交人', data.reporter],
-                ['RootCause', data.rootCause]
-            ].filter(([, value]) => value);
+            const fieldLines = buildFieldLines(data.fieldMap);
+            bugPreviewGrid.textContent = fieldLines.length ? fieldLines.join('\n') : '未解析到字段。';
 
-            bugPreviewGrid.innerHTML = previewFields
-                .map(([label, value]) => `
-                    <div class="rounded-lg bg-white border border-slate-200 px-3 py-3">
-                        <div class="text-xs uppercase tracking-wide text-slate-500">${escapeHtml(label)}</div>
-                        <div class="mt-1 text-sm text-slate-800">${escapeHtml(value)}</div>
-                    </div>
-                `)
-                .join('');
-
-            const comments = (data.comments || []).slice(0, 4);
+            const comments = data.comments || [];
             if (!comments.length) {
-                bugCommentsPreview.innerHTML = '<div class="rounded-lg bg-white border border-slate-200 px-3 py-3 text-sm text-slate-500">未解析到评论，仍可继续人工补充。</div>';
+                bugCommentsPreview.innerHTML = '<div class="rounded-lg bg-white border border-slate-200 px-3 py-3 text-sm text-slate-500">未解析到评论。</div>';
                 return;
             }
 
@@ -643,61 +696,131 @@ NA-系统测试不能覆盖
                 .map((comment, index) => `
                     <div class="rounded-lg bg-white border border-slate-200 px-3 py-3 text-sm">
                         <div class="text-xs text-slate-500">${escapeHtml(comment.author || `评论${index + 1}`)}${comment.time ? ` · ${escapeHtml(comment.time)}` : ''}</div>
-                        <div class="mt-1 text-slate-700">${escapeHtml(summarizeCommentText(comment.text))}</div>
+                        <div class="mt-1 text-slate-700 whitespace-pre-wrap">${escapeHtml(cleanText(comment.text))}</div>
                     </div>
                 `)
                 .join('');
         }
 
-        function setSelectBySimilarity(selectElement, value) {
-            if (!value) return;
-            const normalizedValue = value.toLowerCase();
-            const matchedOption = Array.from(selectElement.options).find((option) => option.text.toLowerCase().includes(normalizedValue));
-            if (matchedOption) {
-                selectElement.value = matchedOption.value;
-            }
+        function clearImportedDisplay() {
+            bugPreviewCard.classList.add('hidden');
         }
 
         function populateFieldsFromBugData(data) {
-            const descInput = document.getElementById('problem-desc');
-            const rootCauseInput = document.getElementById('root-cause-initial');
-            const versionInput = document.getElementById('problem-version');
-            const severitySelect = document.getElementById('severity-level');
-
-            if (!descInput.value.trim()) {
-                const lines = [
-                    data.summary ? `Bug 摘要: ${data.summary}` : '',
-                    data.status ? `当前状态: ${data.status}` : '',
-                    data.comments?.[0]?.text ? `关键评论: ${summarizeCommentText(data.comments[0].text, 180)}` : ''
-                ].filter(Boolean);
-                descInput.value = lines.join('\n');
-            }
-
-            if (!rootCauseInput.value.trim() && data.rootCause) {
-                rootCauseInput.value = data.rootCause;
-            }
-
-            if (!versionInput.value.trim() && data.version) {
-                versionInput.value = data.version;
-            }
-
-            if (data.severity) {
-                setSelectBySimilarity(severitySelect, data.severity);
-            }
+            return buildBugContextText(data);
         }
 
-        async function tryFetchJson(url) {
-            const response = await fetch(url, {
+        function buildImportedBugSummary(data) {
+            if (!data) {
+                return {
+                    desc: '',
+                    initialCause: '',
+                    version: '',
+                    phase: '',
+                    severity: ''
+                };
+            }
+
+            return {
+                desc: cleanText(data.summary || ''),
+                initialCause: cleanText(data.rootCause || ''),
+                version: cleanText(data.version || ''),
+                phase: cleanText(findFieldValueByKeywords(data.fieldMap, ['phase', '发现阶段', 'found', '验证阶段', 'stage']) || ''),
+                severity: cleanText(data.severity || '')
+            };
+        }
+
+        async function tryFetchJson(url, options = {}) {
+            const {
+                apiKey = '',
+                authQueryKey = '',
+                useAuthHeader = false,
+                credentials = 'include'
+            } = options;
+
+            const targetUrl = new URL(url);
+            if (apiKey && authQueryKey) {
+                targetUrl.searchParams.set(authQueryKey, apiKey);
+            }
+
+            const headers = {
+                Accept: 'application/json'
+            };
+            if (apiKey && useAuthHeader) {
+                headers['X-BUGZILLA-API-KEY'] = apiKey;
+            }
+
+            const response = await fetch(targetUrl.toString(), {
                 method: 'GET',
-                credentials: 'include',
-                headers: {
-                    Accept: 'application/json'
-                }
+                credentials,
+                headers
             });
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
             }
             return response.json();
+        }
+
+        async function fetchBugzillaRestResource(resourcePath, rawUrl) {
+            const apiKey = bugzillaApiKeyInput.value.trim();
+            const baseCandidates = deriveBugzillaApiBases(rawUrl, bugzillaApiBaseInput.value);
+            const attempts = [];
+
+            baseCandidates.forEach((base) => {
+                const resourceUrl = joinUrl(base, resourcePath);
+                if (apiKey) {
+                    attempts.push({
+                        label: `${resourceUrl} (api_key 参数)`,
+                        requestUrl: resourceUrl,
+                        requestOptions: {
+                            apiKey,
+                            authQueryKey: 'api_key',
+                            credentials: 'omit'
+                        }
+                    });
+                    attempts.push({
+                        label: `${resourceUrl} (Bugzilla_api_key 参数)`,
+                        requestUrl: resourceUrl,
+                        requestOptions: {
+                            apiKey,
+                            authQueryKey: 'Bugzilla_api_key',
+                            credentials: 'omit'
+                        }
+                    });
+                    attempts.push({
+                        label: `${resourceUrl} (X-BUGZILLA-API-KEY 请求头)`,
+                        requestUrl: resourceUrl,
+                        requestOptions: {
+                            apiKey,
+                            useAuthHeader: true,
+                            credentials: 'omit'
+                        }
+                    });
+                } else {
+                    attempts.push({
+                        label: `${resourceUrl} (无 API Key，使用默认权限)`,
+                        requestUrl: resourceUrl,
+                        requestOptions: {
+                            credentials: 'include'
+                        }
+                    });
+                }
+            });
+
+            if (!attempts.length) {
+                throw new Error('未能推导出可用的 Bugzilla API 基址，请手动填写“Bugzilla API 基址”。');
+            }
+
+            const errors = [];
+            for (const attempt of attempts) {
+                try {
+                    return await tryFetchJson(attempt.requestUrl, attempt.requestOptions);
+                } catch (error) {
+                    errors.push(`${attempt.label}: ${error.message}`);
+                }
+            }
+
+            throw new Error(errors.join('；'));
         }
 
         async function tryFetchHtml(url) {
@@ -715,7 +838,6 @@ NA-系统测试不能覆盖
         }
 
         async function fetchBugzillaDetails(rawUrl) {
-            const parsedUrl = new URL(rawUrl);
             const bugId = extractBugIdFromUrl(rawUrl);
             if (!bugId) {
                 throw new Error('未能从链接中识别 Bug ID，请确认链接格式。');
@@ -726,10 +848,10 @@ NA-系统测试不能覆盖
             const errors = [];
 
             try {
-                const bugPayload = await tryFetchJson(`${parsedUrl.origin}/rest/bug/${bugId}`);
+                const bugPayload = await fetchBugzillaRestResource(`bug/${bugId}`, rawUrl);
                 let commentsPayload = null;
                 try {
-                    commentsPayload = await tryFetchJson(`${parsedUrl.origin}/rest/bug/${bugId}/comment`);
+                    commentsPayload = await fetchBugzillaRestResource(`bug/${bugId}/comment`, rawUrl);
                 } catch (commentError) {
                     errors.push(`评论接口获取失败: ${commentError.message}`);
                 }
@@ -767,6 +889,7 @@ NA-系统测试不能覆盖
             }
 
             hideBugzillaStatus();
+            clearImportedDisplay();
             setBugzillaStatus('loading', '正在抓取 Bugzilla 详情，请稍候...');
             fetchBugzillaBtn.disabled = true;
 
@@ -774,6 +897,7 @@ NA-系统测试不能覆盖
                 const result = await fetchBugzillaDetails(bugUrl);
                 analysisState.bugImport.data = result.data;
                 analysisState.bugImport.lastError = null;
+                analysisState.bugImport.fullContext = buildBugContextText(result.data);
 
                 renderBugPreview(result.data);
                 populateFieldsFromBugData(result.data);
@@ -784,69 +908,28 @@ NA-系统测试不能覆盖
             } catch (error) {
                 analysisState.bugImport.data = null;
                 analysisState.bugImport.lastError = error.message;
-                bugPreviewCard.classList.add('hidden');
-                setBugzillaStatus('warning', `自动抓取失败：${error.message} 你仍然可以直接粘贴“Bug 原始内容补充”继续分析。`);
+                analysisState.bugImport.fullContext = '';
+                clearImportedDisplay();
+                setBugzillaStatus('warning', `自动抓取失败：${error.message}。当前模式下请先修复 API / 权限 / 跨域问题，再继续分析。`);
                 return null;
             } finally {
                 fetchBugzillaBtn.disabled = false;
             }
         }
 
-        function buildBugContextText(bugData) {
-            if (!bugData) {
-                return '未导入 Bugzilla 详情。';
-            }
-
-            const coreLines = [
-                bugData.url ? `Bug 链接: ${bugData.url}` : '',
-                bugData.bugId ? `Bug ID: ${bugData.bugId}` : '',
-                bugData.summary ? `摘要: ${bugData.summary}` : '',
-                bugData.status ? `状态: ${bugData.status}` : '',
-                bugData.severity ? `严重级别: ${bugData.severity}` : '',
-                bugData.priority ? `优先级: ${bugData.priority}` : '',
-                bugData.version ? `版本: ${bugData.version}` : '',
-                bugData.component ? `组件: ${bugData.component}` : '',
-                bugData.assignee ? `负责人: ${bugData.assignee}` : '',
-                bugData.reporter ? `提交人: ${bugData.reporter}` : '',
-                bugData.rootCause ? `RootCause: ${bugData.rootCause}` : '',
-                bugData.source ? `数据来源: ${bugData.source}` : ''
-            ].filter(Boolean);
-
-            const extraFields = Object.entries(bugData.fieldMap || {})
-                .filter(([key, value]) => value && !['summary', 'short_desc', 'status', 'bug_status', 'severity', 'bug_severity', 'priority', 'version', 'target_milestone', 'component', 'assigned_to', 'reporter', 'creator'].includes(key.toLowerCase()))
-                .slice(0, 12)
-                .map(([key, value]) => `${key}: ${value}`);
-
-            const comments = (bugData.comments || []).slice(0, 5).map((comment, index) => {
-                const title = comment.author || `评论${index + 1}`;
-                return `[${title}${comment.time ? ` | ${comment.time}` : ''}] ${summarizeCommentText(comment.text, 350)}`;
-            });
-
-            return [
-                coreLines.join('\n'),
-                extraFields.length ? `其他字段:\n${extraFields.join('\n')}` : '',
-                comments.length ? `关键评论:\n${comments.join('\n')}` : ''
-            ].filter(Boolean).join('\n\n');
-        }
-
         function buildInitialAnalysisContext() {
-            const desc = document.getElementById('problem-desc').value.trim();
-            const manualRawContext = document.getElementById('manual-raw-context').value.trim();
-            const internalTags = getInternalTags();
-            const improvementFocuses = getSelectedImprovementFocuses();
+            const importedBug = analysisState.initialInputs.importedBug;
+            const fullBugDossier = analysisState.initialInputs.rawContext || buildBugContextText(importedBug);
+            const internalTags = analysisState.initialInputs.internalTags || getInternalTags();
+            const improvementFocuses = analysisState.initialInputs.improvementFocuses || getSelectedImprovementFocuses();
 
             return `这是本次漏测回溯分析的已知信息，请优先基于这些内容提问，不要重复询问已经明确的信息。
 
-【Bugzilla 导入信息】
-${buildBugContextText(analysisState.initialInputs.importedBug)}
+【完整 Bugzilla 档案】
+${fullBugDossier || '未导入 Bugzilla 详情。'}
 
-【人工补充说明】
-问题描述 / 分析背景: ${desc || '未补充'}
-Bug 原始内容补充: ${manualRawContext || '未补充'}
-初步 RootCause: ${analysisState.initialInputs.initialCause || '未填写'}
-问题版本: ${analysisState.initialInputs.version || '未填写'}
-发现阶段: ${analysisState.initialInputs.phase}
-严重等级: ${analysisState.initialInputs.severity}
+【分析要求】
+不要只围绕几个预设关键词判断，请综合全部字段、全部评论和完整 Bug 上下文进行分析。
 
 【分析关注点】
 优先改进方向: ${improvementFocuses.length ? improvementFocuses.join('、') : '未指定'}
@@ -1171,11 +1254,11 @@ ${visibleConversation}`;
 
                 <h4>1. 问题概述</h4>
                 <ul>
-                    <li><strong>问题描述 / 分析背景:</strong> ${escapeHtml(initialInputs.desc || '未填写')}</li>
-                    <li><strong>问题版本:</strong> ${escapeHtml(initialInputs.version || '未填写')}</li>
-                    <li><strong>发现阶段:</strong> ${escapeHtml(initialInputs.phase || '未填写')}</li>
-                    <li><strong>严重等级:</strong> ${escapeHtml(initialInputs.severity || '未填写')}</li>
-                    <li><strong>初步 RootCause:</strong> ${escapeHtml(initialInputs.initialCause || '未填写')}</li>
+                    <li><strong>问题描述 / 分析背景:</strong> ${escapeHtml(initialInputs.desc || '未识别')}</li>
+                    <li><strong>问题版本:</strong> ${escapeHtml(initialInputs.version || '未识别')}</li>
+                    <li><strong>发现阶段:</strong> ${escapeHtml(initialInputs.phase || '未识别')}</li>
+                    <li><strong>严重等级:</strong> ${escapeHtml(initialInputs.severity || '未识别')}</li>
+                    <li><strong>RootCause:</strong> ${escapeHtml(initialInputs.initialCause || '未识别')}</li>
                     <li><strong>优先改进方向:</strong> ${escapeHtml(initialInputs.improvementFocuses.join('、') || '未指定')}</li>
                 </ul>
 
@@ -1228,8 +1311,6 @@ ${visibleConversation}`;
         fetchBugzillaBtn.addEventListener('click', importBugzillaData);
 
         startAnalysisBtn.addEventListener('click', async () => {
-            const desc = document.getElementById('problem-desc').value.trim();
-            const manualRawContext = document.getElementById('manual-raw-context').value.trim();
             const apiKey = document.getElementById('api-key').value.trim();
             const apiEndpoint = document.getElementById('api-endpoint').value.trim();
             const bugUrl = bugzillaUrlInput.value.trim();
@@ -1240,8 +1321,8 @@ ${visibleConversation}`;
                 await importBugzillaData();
             }
 
-            if (!desc && !manualRawContext && !analysisState.bugImport.data) {
-                alert('请至少提供以下信息之一：Bugzilla 链接、问题描述、或 Bug 原始内容补充。');
+            if (!analysisState.bugImport.data) {
+                alert('当前模式仅支持基于 Bugzilla 自动导入信息进行分析，请先成功抓取 Bug 详情。');
                 return;
             }
 
@@ -1255,17 +1336,19 @@ ${visibleConversation}`;
                 return;
             }
 
+            const importedSummary = buildImportedBugSummary(analysisState.bugImport.data);
+
             analysisState = {
                 conversationHistory: [],
                 initialInputs: {
                     bugUrl,
                     importedBug: analysisState.bugImport.data,
-                    rawContext: manualRawContext,
-                    desc,
-                    initialCause: document.getElementById('root-cause-initial').value.trim(),
-                    version: document.getElementById('problem-version').value.trim(),
-                    phase: document.getElementById('discovery-phase').value,
-                    severity: document.getElementById('severity-level').value,
+                    rawContext: analysisState.bugImport.fullContext || buildBugContextText(analysisState.bugImport.data),
+                    desc: importedSummary.desc,
+                    initialCause: importedSummary.initialCause,
+                    version: importedSummary.version,
+                    phase: importedSummary.phase,
+                    severity: importedSummary.severity,
                     improvementFocuses,
                     internalTags: getInternalTags()
                 },
@@ -1278,7 +1361,8 @@ ${visibleConversation}`;
                 turnCount: 0,
                 bugImport: {
                     data: analysisState.bugImport.data,
-                    lastError: analysisState.bugImport.lastError
+                    lastError: analysisState.bugImport.lastError,
+                    fullContext: analysisState.bugImport.fullContext
                 }
             };
 
@@ -1289,7 +1373,7 @@ ${visibleConversation}`;
             reportOutput.innerHTML = '<p class="text-slate-500">完成分析后，将在此处生成完整报告。</p>';
 
             rightColumn.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            addMessage('ai', '已收到你的问题信息。我会尽量利用 Bugzilla 已导入的细节，只追问真正影响改进判断的关键信息。');
+            addMessage('ai', '已收到你的问题信息。我会基于导入的完整 Bugzilla 字段和全部评论做分析，只追问仍然缺失、但确实影响改进判断的信息。');
 
             startConversation();
         });
