@@ -231,7 +231,12 @@ NA-系统测试不能覆盖
                 </div>
 
                 <div id="report-section" class="bg-white p-6 rounded-xl shadow-md hidden">
-                    <h2 class="text-xl font-semibold text-slate-800 border-b pb-3 mb-4">第五步：生成改进分析报告</h2>
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b pb-3 mb-4">
+                        <h2 class="text-xl font-semibold text-slate-800">第五步：生成改进分析报告</h2>
+                        <button id="download-report-btn" type="button" class="hidden inline-flex items-center justify-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 transition-colors">
+                            下载 HTML 报告
+                        </button>
+                    </div>
                     <div id="report-output" class="prose max-w-none prose-slate">
                         <p class="text-slate-500">完成分析后，将在此处生成完整报告。</p>
                     </div>
@@ -258,6 +263,7 @@ NA-系统测试不能覆盖
         const bugzillaApiBaseInput = document.getElementById('bugzilla-api-base');
         const bugzillaApiKeyInput = document.getElementById('bugzilla-api-key');
         const fetchBugzillaBtn = document.getElementById('fetch-bugzilla-btn');
+        const downloadReportBtn = document.getElementById('download-report-btn');
         const bugzillaStatus = document.getElementById('bugzilla-status');
         const bugPreviewCard = document.getElementById('bug-preview-card');
         const bugPreviewTitle = document.getElementById('bug-preview-title');
@@ -274,7 +280,8 @@ NA-系统测试不能覆盖
                 data: null,
                 lastError: null,
                 fullContext: ''
-            }
+            },
+            lastGeneratedReportHtml: ''
         };
 
         function escapeHtml(value) {
@@ -333,6 +340,11 @@ NA-系统测试不能覆盖
         function hideBugzillaStatus() {
             bugzillaStatus.classList.add('hidden');
             bugzillaStatus.textContent = '';
+        }
+
+        function setInputSectionLocked(isLocked) {
+            initialInputSection.classList.toggle('disabled-ui', isLocked);
+            startAnalysisBtn.classList.toggle('disabled-ui', isLocked);
         }
 
         function getSelectedImprovementFocuses() {
@@ -472,8 +484,38 @@ NA-系统测试不能覆盖
             return '';
         }
 
+        function isTimestampLikeValue(value) {
+            const text = cleanText(value);
+            if (!text) return false;
+            return /^\d{4}-\d{2}-\d{2}t\d{2}:\d{2}:\d{2}(?:\.\d+)?z?$/i.test(text)
+                || /^\d{4}-\d{2}-\d{2}[ t]\d{2}:\d{2}:\d{2}$/i.test(text);
+        }
+
+        function parseBracketedSections(text) {
+            const normalizedText = cleanText(text);
+            if (!normalizedText) return {};
+
+            const sectionRegex = /\[\s*(?:\d+\.)?\s*([^\]]+?)\s*\]\s*[:：]\s*/gi;
+            const matches = Array.from(normalizedText.matchAll(sectionRegex));
+            if (!matches.length) {
+                return {};
+            }
+
+            const sections = {};
+            matches.forEach((match, index) => {
+                const title = cleanText(match[1]);
+                const start = match.index + match[0].length;
+                const end = index + 1 < matches.length ? matches[index + 1].index : normalizedText.length;
+                const content = cleanText(normalizedText.slice(start, end));
+                if (title && content) {
+                    sections[normalizeFieldLookupKey(title)] = content;
+                }
+            });
+            return sections;
+        }
+
         function findImportantBugFields(fieldMap) {
-            const rootCause = findFieldValueByAliases(fieldMap, [
+            const directRootCause = findFieldValueByAliases(fieldMap, [
                 'root cause',
                 'rootcause',
                 'root_cause',
@@ -486,9 +528,9 @@ NA-系统测试不能覆盖
                 findFieldValueByAliases(fieldMap, ['resolution detail', 'resolutiondetail', '解决方案', '解决方法', '处理方案', 'fix solution', 'solution', 'cf_resolution']),
                 findFieldValueByAliases(fieldMap, ['resolution'])
             ].filter(Boolean);
-            const resolution = resolutionCandidates.find((value) => !['fixed', 'invalid', 'duplicate', 'wontfix', 'worksforme', 'moved'].includes(value.toLowerCase())) || resolutionCandidates[0] || '';
+            const rawResolution = resolutionCandidates.find((value) => !['fixed', 'invalid', 'duplicate', 'wontfix', 'worksforme', 'moved'].includes(value.toLowerCase())) || resolutionCandidates[0] || '';
 
-            const testSuggestion = findFieldValueByAliases(fieldMap, [
+            const directTestSuggestion = findFieldValueByAliases(fieldMap, [
                 'test suggestion',
                 'testsuggestion',
                 'test_suggestion',
@@ -497,6 +539,17 @@ NA-系统测试不能覆盖
                 '测试建议',
                 '回归建议'
             ]);
+
+            const compositeSections = rawResolution ? parseBracketedSections(rawResolution) : {};
+            const parsedRootCause = compositeSections.rootcause || compositeSections.rootcause1 || compositeSections.rootcause2 || '';
+            const parsedResolution = compositeSections.resolution || compositeSections.resolution1 || '';
+            const parsedTestSuggestion = compositeSections.testingsuggestion || compositeSections.testsuggestion || '';
+
+            const rootCause = parsedRootCause
+                || (directRootCause && !isTimestampLikeValue(directRootCause) ? directRootCause : '');
+
+            const resolution = parsedResolution || rawResolution;
+            const testSuggestion = directTestSuggestion || parsedTestSuggestion;
 
             return {
                 rootCause,
@@ -808,6 +861,77 @@ NA-系统测试不能覆盖
                 phase: cleanText(findFieldValueByKeywords(data.fieldMap, ['phase', '发现阶段', 'found', '验证阶段', 'stage']) || ''),
                 severity: cleanText(data.severity || '')
             };
+        }
+
+        function buildReportFileName() {
+            const importedBug = analysisState.initialInputs?.importedBug;
+            const bugIdPart = importedBug?.bugId ? `bug-${importedBug.bugId}` : 'bug-analysis';
+            const timePart = new Date().toISOString().replace(/[:]/g, '-').replace(/\..+/, '');
+            return `${bugIdPart}-${timePart}.html`;
+        }
+
+        function buildDownloadableReportHtml() {
+            return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>漏测改进分析报告</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 32px 20px 48px;
+            color: #0f172a;
+            background: #f8fafc;
+            line-height: 1.65;
+        }
+        .report-shell {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 18px;
+            padding: 28px;
+            box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+        }
+        h1, h2, h3, h4, h5 {
+            color: #0f172a;
+            margin-top: 1.2em;
+            margin-bottom: 0.55em;
+        }
+        h3 { font-size: 1.8rem; }
+        h4 { font-size: 1.2rem; border-top: 1px solid #e2e8f0; padding-top: 1rem; }
+        ul { padding-left: 1.25rem; }
+        li { margin: 0.35rem 0; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        th, td { border: 1px solid #cbd5e1; padding: 10px 12px; text-align: left; vertical-align: top; }
+        th { background: #e2e8f0; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; }
+        code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    </style>
+</head>
+<body>
+    <div class="report-shell">
+        ${reportOutput.innerHTML}
+    </div>
+</body>
+</html>`;
+        }
+
+        function downloadCurrentReport() {
+            if (!analysisState.lastGeneratedReportHtml) {
+                alert('当前还没有可下载的分析报告。');
+                return;
+            }
+
+            const blob = new Blob([analysisState.lastGeneratedReportHtml], { type: 'text/html;charset=utf-8' });
+            const downloadUrl = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = buildReportFileName();
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(downloadUrl);
         }
 
         async function tryFetchJson(url, options = {}) {
@@ -1254,6 +1378,7 @@ Test Suggestion: ${analysisState.initialInputs.testSuggestion || '未识别'}
 
         async function triggerFinalAnalysis() {
             reportSection.classList.remove('hidden');
+            downloadReportBtn.classList.add('hidden');
             reportOutput.innerHTML = '<p class="text-slate-500">AI 正在整理回溯结论和改进建议，请稍候...</p>';
 
             try {
@@ -1330,9 +1455,12 @@ ${visibleConversation}`;
                 console.error('Final Analysis Error:', error);
                 addMessage('ai', `抱歉，生成报告时遇到错误: ${error.message}`);
                 reportOutput.innerHTML = `<p class="text-red-500">AI 分析失败: ${escapeHtml(error.message)}</p>`;
+                analysisState.lastGeneratedReportHtml = '';
+                downloadReportBtn.classList.add('hidden');
             } finally {
                 setThinking(false);
                 chatInputArea.classList.add('hidden');
+                setInputSectionLocked(false);
             }
         }
 
@@ -1450,6 +1578,8 @@ ${visibleConversation}`;
                 <ul>${modelConfigHtml}</ul>
             `;
 
+            analysisState.lastGeneratedReportHtml = buildDownloadableReportHtml();
+            downloadReportBtn.classList.remove('hidden');
             reportSection.scrollIntoView({ behavior: 'smooth' });
         }
 
@@ -1520,14 +1650,16 @@ ${visibleConversation}`;
                     data: analysisState.bugImport.data,
                     lastError: analysisState.bugImport.lastError,
                     fullContext: analysisState.bugImport.fullContext
-                }
+                },
+                lastGeneratedReportHtml: ''
             };
 
-            initialInputSection.classList.add('disabled-ui');
-            startAnalysisBtn.classList.add('disabled-ui');
+            setInputSectionLocked(true);
             chatContainer.innerHTML = '';
             reportSection.classList.add('hidden');
+            downloadReportBtn.classList.add('hidden');
             reportOutput.innerHTML = '<p class="text-slate-500">完成分析后，将在此处生成完整报告。</p>';
+            analysisState.lastGeneratedReportHtml = '';
 
             rightColumn.scrollIntoView({ behavior: 'smooth', block: 'start' });
             addMessage('ai', '已收到你的问题信息。我会基于导入的完整 Bugzilla 字段和全部评论做分析，只追问仍然缺失、但确实影响改进判断的信息。');
@@ -1536,6 +1668,7 @@ ${visibleConversation}`;
         });
 
         sendBtn.addEventListener('click', handleUserMessage);
+        downloadReportBtn.addEventListener('click', downloadCurrentReport);
         userInput.addEventListener('keypress', (event) => {
             if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault();
