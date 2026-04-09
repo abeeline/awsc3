@@ -83,7 +83,7 @@
                                     <input id="bugzilla-api-key" type="password" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" placeholder="用于通过 REST API 拉取详情">
                                 </div>
                             </div>
-                            <p class="mt-2 text-xs text-slate-600">会优先尝试 Bugzilla REST API。若填写了 API Key，会优先走 API 鉴权方式；若仍失败，再回退页面解析。当前页面采用“仅基于自动导入信息分析”的模式，需先成功导入 Bug 才能继续。</p>
+                            <p class="mt-2 text-xs text-slate-600">会优先尝试 Bugzilla REST API。若填写了 API Key，会优先走 API 鉴权方式；若仍失败，再回退页面解析。当前页面采用“仅基于自动导入信息分析”的模式，需先成功导入 Bug 才能继续。系统账号 `samplecode`、`itest`、`cmadmin` 的评论会自动过滤，不参与展示和后续分析。</p>
                             <div id="bugzilla-status" class="hidden mt-3 rounded-lg px-3 py-2 text-sm"></div>
                         </div>
 
@@ -453,6 +453,17 @@ NA-系统测试不能覆盖
             return '';
         }
 
+        function normalizeCommentAuthorKey(author) {
+            const compact = cleanText(author).toLowerCase().replace(/\s+/g, '');
+            return compact.split(/[(@<]/)[0];
+        }
+
+        function shouldExcludeComment(comment) {
+            const excludedAuthors = ['samplecode', 'itest', 'cmadmin'];
+            const authorKey = normalizeCommentAuthorKey(comment?.author || '');
+            return excludedAuthors.includes(authorKey);
+        }
+
         function collectFieldMapFromDocument(doc) {
             const fieldMap = {};
 
@@ -519,7 +530,8 @@ NA-系统测试不能覆盖
                     const text = cleanText(node.textContent);
                     return { author, time, text };
                 })
-                .filter((comment) => comment.text);
+                .filter((comment) => comment.text)
+                .filter((comment) => !shouldExcludeComment(comment));
         }
 
         function buildRestBugData(bugPayload, commentsPayload, rawUrl, bugId) {
@@ -543,7 +555,8 @@ NA-系统测试不能覆盖
                     time: cleanText(comment.time || comment.creation_time || ''),
                     text: cleanText(comment.text || comment.body || '')
                 }))
-                .filter((comment) => comment.text);
+                .filter((comment) => comment.text)
+                .filter((comment) => !shouldExcludeComment(comment));
 
             return {
                 bugId: String(bug.id || bugId || ''),
@@ -1132,17 +1145,34 @@ ${fullBugDossier || '未导入 Bugzilla 详情。'}
         }
 
         function normalizeFinalReport(report) {
+            const rawReferenceCase = report.referenceTestCase || {};
+            const fallbackSteps = Array.isArray(report.testCaseSuggestions)
+                ? report.testCaseSuggestions.map((item, index) => ({
+                    step: cleanText(item.step || item.title || item.name || `步骤 ${index + 1}`),
+                    expected: cleanText(item.expected || item.checks || item.assertions || item.validation || item.setup || '')
+                })).filter((item) => item.step || item.expected)
+                : [];
+
             return {
                 improvementDecision: cleanText(report.improvementDecision || '信息不足'),
                 decisionSummary: cleanText(report.decisionSummary || ''),
                 rootCauseSummary: cleanText(report.rootCauseSummary || ''),
                 missedOpportunities: Array.isArray(report.missedOpportunities) ? report.missedOpportunities.map(cleanText).filter(Boolean) : [],
                 improvementActions: Array.isArray(report.improvementActions) ? report.improvementActions.map(cleanText).filter(Boolean) : [],
-                testCaseSuggestions: Array.isArray(report.testCaseSuggestions) ? report.testCaseSuggestions.map((item) => ({
-                    title: cleanText(item.title || item.name || ''),
-                    setup: cleanText(item.setup || item.precondition || ''),
-                    checks: cleanText(item.checks || item.assertions || item.validation || '')
-                })).filter((item) => item.title || item.setup || item.checks) : [],
+                referenceTestCase: {
+                    title: cleanText(rawReferenceCase.title || '漏测补强参考测试用例'),
+                    objective: cleanText(rawReferenceCase.objective || rawReferenceCase.goal || ''),
+                    preconditions: Array.isArray(rawReferenceCase.preconditions) ? rawReferenceCase.preconditions.map(cleanText).filter(Boolean) : [],
+                    testData: Array.isArray(rawReferenceCase.testData) ? rawReferenceCase.testData.map(cleanText).filter(Boolean) : [],
+                    steps: Array.isArray(rawReferenceCase.steps)
+                        ? rawReferenceCase.steps.map((item, index) => ({
+                            step: cleanText(item.step || item.action || item.description || `步骤 ${index + 1}`),
+                            expected: cleanText(item.expected || item.result || item.check || '')
+                        })).filter((item) => item.step || item.expected)
+                        : fallbackSteps,
+                    passCriteria: Array.isArray(rawReferenceCase.passCriteria) ? rawReferenceCase.passCriteria.map(cleanText).filter(Boolean) : [],
+                    customizationNotes: Array.isArray(rawReferenceCase.customizationNotes) ? rawReferenceCase.customizationNotes.map(cleanText).filter(Boolean) : []
+                },
                 needMoreInfo: Array.isArray(report.needMoreInfo) ? report.needMoreInfo.map(cleanText).filter(Boolean) : [],
                 internalTag: cleanText(report.internalTag || '')
             };
@@ -1173,13 +1203,20 @@ ${fullBugDossier || '未导入 Bugzilla 详情。'}
   "rootCauseSummary": "总结最关键的根因链路，强调导致漏失的具体环节",
   "missedOpportunities": ["列出 2-4 个最关键的漏失环节"],
   "improvementActions": ["列出 3 条可执行的改进动作"],
-  "testCaseSuggestions": [
-    {
-      "title": "测试场景标题",
-      "setup": "前置条件 / 数据 / 环境",
-      "checks": "关键验证点"
-    }
-  ],
+  "referenceTestCase": {
+    "title": "参考测试用例标题",
+    "objective": "该用例的测试目标",
+    "preconditions": ["执行前置条件"],
+    "testData": ["关键测试数据"],
+    "steps": [
+      {
+        "step": "执行步骤",
+        "expected": "该步骤的预期结果"
+      }
+    ],
+    "passCriteria": ["整体通过标准"],
+    "customizationNotes": ["用户后续可如何按项目实际继续细化"]
+  },
   "needMoreInfo": ["若仍有关键缺口，列出 0-3 条"],
   "internalTag": "如果且仅当提供的内部标签中有明确适配项，返回一个；否则返回空字符串"
 }
@@ -1189,7 +1226,9 @@ ${fullBugDossier || '未导入 Bugzilla 详情。'}
 - 如果问题与客户差异、第三方限制、版本口径差异相关，也要判断内部是否仍可在风险识别、隔离、回归、前置检查上补强。
 - missedOpportunities 要写成能力或流程层面的遗漏，如需求澄清、测试策略、场景覆盖、测试数据、环境组合、兼容性联调、回归准入、自动化/监控。
 - improvementActions 必须具体、可执行、可落地。
-- testCaseSuggestions 返回 2-4 条即可。
+- referenceTestCase 必须是一个完整、可操作、可直接被测试人员拿去细化修改的参考测试用例，而不是几条泛化场景。
+- referenceTestCase.steps 至少给出 5 步，并且每一步都要有明确 expected。
+- preconditions、testData、passCriteria、customizationNotes 都要尽量写实，贴合当前 bug 的根因和触发条件。
 - 仅在下列标签中确实匹配时才返回 internalTag：${internalTagsText}
 
 分析关注点：${focusText}
@@ -1225,18 +1264,51 @@ ${visibleConversation}`;
             return `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`;
         }
 
-        function renderTestCases(testCases) {
-            if (!testCases.length) {
-                return '<p class="text-slate-500">暂无测试补强建议。</p>';
+        function renderReferenceTestCase(referenceTestCase) {
+            if (!referenceTestCase || !referenceTestCase.steps.length) {
+                return '<p class="text-slate-500">暂无可执行的参考测试用例。</p>';
             }
 
-            return testCases.map((testCase, index) => `
-                <div class="rounded-lg border border-slate-200 bg-slate-50 p-4 mb-3">
-                    <p class="font-semibold text-slate-800">${index + 1}. ${escapeHtml(testCase.title || '补充测试场景')}</p>
-                    ${testCase.setup ? `<p class="mt-2 text-sm text-slate-700"><strong>前置条件 / 数据：</strong>${escapeHtml(testCase.setup)}</p>` : ''}
-                    ${testCase.checks ? `<p class="mt-2 text-sm text-slate-700"><strong>关键验证点：</strong>${escapeHtml(testCase.checks)}</p>` : ''}
-                </div>
+            const renderStringList = (title, items) => {
+                if (!items.length) return '';
+                return `
+                    <div class="mt-3">
+                        <p class="text-sm font-semibold text-slate-800">${escapeHtml(title)}</p>
+                        <ul class="mt-1">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+                    </div>
+                `;
+            };
+
+            const stepRows = referenceTestCase.steps.map((item, index) => `
+                <tr class="border-t border-slate-200 align-top">
+                    <td class="px-3 py-3 text-sm text-slate-700 font-medium">${index + 1}</td>
+                    <td class="px-3 py-3 text-sm text-slate-700 whitespace-pre-wrap">${escapeHtml(item.step)}</td>
+                    <td class="px-3 py-3 text-sm text-slate-700 whitespace-pre-wrap">${escapeHtml(item.expected || '需补充预期结果')}</td>
+                </tr>
             `).join('');
+
+            return `
+                <div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    <p class="text-lg font-semibold text-slate-900">${escapeHtml(referenceTestCase.title || '漏测补强参考测试用例')}</p>
+                    ${referenceTestCase.objective ? `<p class="mt-2 text-sm text-slate-700"><strong>测试目标：</strong>${escapeHtml(referenceTestCase.objective)}</p>` : ''}
+                    ${renderStringList('前置条件', referenceTestCase.preconditions)}
+                    ${renderStringList('测试数据', referenceTestCase.testData)}
+                    <div class="mt-4 overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                        <table class="min-w-full border-collapse">
+                            <thead class="bg-slate-100">
+                                <tr>
+                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">步骤</th>
+                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">操作</th>
+                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">预期结果</th>
+                                </tr>
+                            </thead>
+                            <tbody>${stepRows}</tbody>
+                        </table>
+                    </div>
+                    ${renderStringList('通过标准', referenceTestCase.passCriteria)}
+                    ${renderStringList('后续细化建议', referenceTestCase.customizationNotes)}
+                </div>
+            `;
         }
 
         function generateReport(report) {
@@ -1263,7 +1335,7 @@ ${visibleConversation}`;
                 </ul>
 
                 ${bugSummary ? `
-                    <h4>2. Bugzilla 导入摘要</h4>
+                    <h4>2. Bugzilla 导入档案</h4>
                     <div class="bg-slate-50 border border-slate-200 rounded-lg p-4 whitespace-pre-wrap">${escapeHtml(bugSummary)}</div>
                 ` : ''}
 
@@ -1278,8 +1350,8 @@ ${visibleConversation}`;
                 <h5>优先改进动作</h5>
                 ${renderSimpleList(report.improvementActions, 'AI 未生成明确的改进动作。')}
 
-                <h4>${bugSummary ? '4' : '3'}. 建议补充测试用例 / 场景</h4>
-                ${renderTestCases(report.testCaseSuggestions)}
+                <h4>${bugSummary ? '4' : '3'}. 参考测试用例</h4>
+                ${renderReferenceTestCase(report.referenceTestCase)}
 
                 ${report.needMoreInfo.length ? `
                     <h4>${bugSummary ? '5' : '4'}. 建议继续核实的信息</h4>
