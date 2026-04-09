@@ -420,6 +420,13 @@ NA-系统测试不能覆盖
                 .toLowerCase();
         }
 
+        function normalizeFieldLookupKey(label) {
+            return cleanText(label)
+                .toLowerCase()
+                .replace(/[：:()[\]{}<>]/g, '')
+                .replace(/[\s_\-/.]+/g, '');
+        }
+
         function formatFieldValue(value) {
             if (Array.isArray(value)) {
                 return value.map((item) => formatFieldValue(item)).filter(Boolean).join('、');
@@ -432,17 +439,6 @@ NA-系统测试不能覆盖
             return cleanText(String(value ?? ''));
         }
 
-        function findRootCauseValue(fieldMap) {
-            const keywords = ['rootcause', 'root cause', 'root_cause', '根因', '原因'];
-            for (const [key, value] of Object.entries(fieldMap)) {
-                const normalized = key.toLowerCase();
-                if (keywords.some((keyword) => normalized.includes(keyword))) {
-                    return value;
-                }
-            }
-            return '';
-        }
-
         function findFieldValueByKeywords(fieldMap, keywords) {
             for (const [key, value] of Object.entries(fieldMap || {})) {
                 const normalized = key.toLowerCase();
@@ -451,6 +447,62 @@ NA-系统测试不能覆盖
                 }
             }
             return '';
+        }
+
+        function findFieldValueByAliases(fieldMap, aliases) {
+            const entries = Object.entries(fieldMap || {});
+            if (!entries.length) return '';
+
+            const normalizedAliases = aliases.map(normalizeFieldLookupKey);
+
+            for (const alias of normalizedAliases) {
+                const exactMatch = entries.find(([key, value]) => normalizeFieldLookupKey(key) === alias && cleanText(value));
+                if (exactMatch) {
+                    return cleanText(exactMatch[1]);
+                }
+            }
+
+            for (const alias of normalizedAliases) {
+                const fuzzyMatch = entries.find(([key, value]) => normalizeFieldLookupKey(key).includes(alias) && cleanText(value));
+                if (fuzzyMatch) {
+                    return cleanText(fuzzyMatch[1]);
+                }
+            }
+
+            return '';
+        }
+
+        function findImportantBugFields(fieldMap) {
+            const rootCause = findFieldValueByAliases(fieldMap, [
+                'root cause',
+                'rootcause',
+                'root_cause',
+                'cf_root_cause',
+                'cf_rootcause',
+                '根因'
+            ]);
+
+            const resolutionCandidates = [
+                findFieldValueByAliases(fieldMap, ['resolution detail', 'resolutiondetail', '解决方案', '解决方法', '处理方案', 'fix solution', 'solution', 'cf_resolution']),
+                findFieldValueByAliases(fieldMap, ['resolution'])
+            ].filter(Boolean);
+            const resolution = resolutionCandidates.find((value) => !['fixed', 'invalid', 'duplicate', 'wontfix', 'worksforme', 'moved'].includes(value.toLowerCase())) || resolutionCandidates[0] || '';
+
+            const testSuggestion = findFieldValueByAliases(fieldMap, [
+                'test suggestion',
+                'testsuggestion',
+                'test_suggestion',
+                'cf_test_suggestion',
+                'testing suggestion',
+                '测试建议',
+                '回归建议'
+            ]);
+
+            return {
+                rootCause,
+                resolution,
+                testSuggestion
+            };
         }
 
         function normalizeCommentAuthorKey(author) {
@@ -548,6 +600,8 @@ NA-系统测试不能覆盖
                 }
             });
 
+            const importantFields = findImportantBugFields(fieldMap);
+
             const comments = commentsPayload?.bugs?.[bug.id || bugId]?.comments || [];
             const normalizedComments = comments
                 .map((comment) => ({
@@ -567,7 +621,9 @@ NA-系统测试不能覆盖
                 severity: cleanText(bug.severity || bug.bug_severity || ''),
                 priority: cleanText(bug.priority || ''),
                 version: cleanText(formatFieldValue(bug.version || bug.target_milestone || bug.cf_build_version || '')),
-                rootCause: cleanText(findRootCauseValue(fieldMap)),
+                rootCause: importantFields.rootCause,
+                resolution: importantFields.resolution,
+                testSuggestion: importantFields.testSuggestion,
                 component: cleanText(formatFieldValue(bug.component || '')),
                 assignee: cleanText(formatFieldValue(bug.assigned_to_detail?.real_name || bug.assigned_to || '')),
                 reporter: cleanText(formatFieldValue(bug.creator_detail?.real_name || bug.creator || '')),
@@ -578,6 +634,7 @@ NA-系统测试不能覆盖
 
         function buildHtmlBugData(doc, rawUrl, bugId) {
             const fieldMap = collectFieldMapFromDocument(doc);
+            const importantFields = findImportantBugFields(fieldMap);
             const title =
                 cleanText(doc.querySelector('#field-value-short_desc, #short_desc_nonedit_display, .bz_short_desc_container, .bz_bug_title')?.textContent) ||
                 cleanText(doc.querySelector('title')?.textContent || '');
@@ -608,7 +665,9 @@ NA-系统测试不能覆盖
                 severity: severityText,
                 priority: fieldMap.priority || cleanText(doc.querySelector('#field-value-priority')?.textContent || ''),
                 version: versionText,
-                rootCause: cleanText(findRootCauseValue(fieldMap)),
+                rootCause: importantFields.rootCause,
+                resolution: importantFields.resolution,
+                testSuggestion: importantFields.testSuggestion,
                 component: fieldMap.component || '',
                 assignee: fieldMap.assigned_to || fieldMap.assignee || '',
                 reporter: fieldMap.reporter || fieldMap.creator || '',
@@ -631,6 +690,8 @@ NA-系统测试不能覆盖
                 priority: primary.priority || secondary.priority,
                 version: primary.version || secondary.version,
                 rootCause: primary.rootCause || secondary.rootCause,
+                resolution: primary.resolution || secondary.resolution,
+                testSuggestion: primary.testSuggestion || secondary.testSuggestion,
                 component: primary.component || secondary.component,
                 assignee: primary.assignee || secondary.assignee,
                 reporter: primary.reporter || secondary.reporter,
@@ -678,6 +739,8 @@ NA-系统测试不能覆盖
                 bugData.assignee ? `负责人: ${bugData.assignee}` : '',
                 bugData.reporter ? `提交人: ${bugData.reporter}` : '',
                 bugData.rootCause ? `RootCause: ${bugData.rootCause}` : '',
+                bugData.resolution ? `Resolution: ${bugData.resolution}` : '',
+                bugData.testSuggestion ? `Test Suggestion: ${bugData.testSuggestion}` : '',
                 bugData.source ? `数据来源: ${bugData.source}` : ''
             ].filter(Boolean);
 
@@ -728,6 +791,8 @@ NA-系统测试不能覆盖
                 return {
                     desc: '',
                     initialCause: '',
+                    resolution: '',
+                    testSuggestion: '',
                     version: '',
                     phase: '',
                     severity: ''
@@ -737,6 +802,8 @@ NA-系统测试不能覆盖
             return {
                 desc: cleanText(data.summary || ''),
                 initialCause: cleanText(data.rootCause || ''),
+                resolution: cleanText(data.resolution || ''),
+                testSuggestion: cleanText(data.testSuggestion || ''),
                 version: cleanText(data.version || ''),
                 phase: cleanText(findFieldValueByKeywords(data.fieldMap, ['phase', '发现阶段', 'found', '验证阶段', 'stage']) || ''),
                 severity: cleanText(data.severity || '')
@@ -940,6 +1007,11 @@ NA-系统测试不能覆盖
 
 【完整 Bugzilla 档案】
 ${fullBugDossier || '未导入 Bugzilla 详情。'}
+
+【重点字段】
+RootCause: ${analysisState.initialInputs.initialCause || '未识别'}
+Resolution: ${analysisState.initialInputs.resolution || '未识别'}
+Test Suggestion: ${analysisState.initialInputs.testSuggestion || '未识别'}
 
 【分析要求】
 不要只围绕几个预设关键词判断，请综合全部字段、全部评论和完整 Bug 上下文进行分析。
@@ -1156,7 +1228,9 @@ ${fullBugDossier || '未导入 Bugzilla 详情。'}
             return {
                 improvementDecision: cleanText(report.improvementDecision || '信息不足'),
                 decisionSummary: cleanText(report.decisionSummary || ''),
+                rootCauseAssessment: cleanText(report.rootCauseAssessment || ''),
                 rootCauseSummary: cleanText(report.rootCauseSummary || ''),
+                developerConfirmationNote: cleanText(report.developerConfirmationNote || report.rootCauseConfirmationNote || ''),
                 missedOpportunities: Array.isArray(report.missedOpportunities) ? report.missedOpportunities.map(cleanText).filter(Boolean) : [],
                 improvementActions: Array.isArray(report.improvementActions) ? report.improvementActions.map(cleanText).filter(Boolean) : [],
                 referenceTestCase: {
@@ -1200,7 +1274,9 @@ ${fullBugDossier || '未导入 Bugzilla 详情。'}
 {
   "improvementDecision": "内部可改进 | 部分可改进 | 暂不作为内部改进项 | 信息不足",
   "decisionSummary": "用 1-2 句话概括为什么这么判断",
-  "rootCauseSummary": "总结最关键的根因链路，强调导致漏失的具体环节",
+  "rootCauseAssessment": "根因较明确 | 初步判断，仍需研发确认 | 信息不足，需研发确认",
+  "rootCauseSummary": "基于 bug 全文、原始 RootCause、Resolution、Test Suggestion 综合形成的更完整根因分析，强调上下文、约束条件与导致漏失的关键链路",
+  "developerConfirmationNote": "如果根因仍不够确定，明确说明还需要研发补充确认什么；如果已经较明确则返回空字符串",
   "missedOpportunities": ["列出 2-4 个最关键的漏失环节"],
   "improvementActions": ["列出 3 条可执行的改进动作"],
   "referenceTestCase": {
@@ -1223,11 +1299,14 @@ ${fullBugDossier || '未导入 Bugzilla 详情。'}
 
 约束：
 - 主结论必须围绕“是否值得内部改进以及改什么”，不要把内部标签当作主输出。
+- 报告中的根因分析不要简单复述 Bug 原始 RootCause，而要结合完整 bug 上下文、Resolution、Test Suggestion 和对话内容，给出更完整、更贴近实际的综合根因分析。
 - 如果问题与客户差异、第三方限制、版本口径差异相关，也要判断内部是否仍可在风险识别、隔离、回归、前置检查上补强。
 - missedOpportunities 要写成能力或流程层面的遗漏，如需求澄清、测试策略、场景覆盖、测试数据、环境组合、兼容性联调、回归准入、自动化/监控。
 - improvementActions 必须具体、可执行、可落地。
 - referenceTestCase 必须是一个完整、可操作、可直接被测试人员拿去细化修改的参考测试用例，而不是几条泛化场景。
 - referenceTestCase.steps 至少给出 5 步，并且每一步都要有明确 expected。
+- 如果 Bug 中已经提供了 RootCause、Resolution、Test Suggestion，必须优先吸收这些信息，并体现在根因判断、改进动作和参考测试用例中。
+- 如果基于现有信息仍不能较准确判断根因，rootCauseAssessment 必须返回“初步判断，仍需研发确认”或“信息不足，需研发确认”，并在 developerConfirmationNote 中明确提示用户线下找研发进一步确认哪些信息。
 - preconditions、testData、passCriteria、customizationNotes 都要尽量写实，贴合当前 bug 的根因和触发条件。
 - 仅在下列标签中确实匹配时才返回 internalTag：${internalTagsText}
 
@@ -1330,7 +1409,9 @@ ${visibleConversation}`;
                     <li><strong>问题版本:</strong> ${escapeHtml(initialInputs.version || '未识别')}</li>
                     <li><strong>发现阶段:</strong> ${escapeHtml(initialInputs.phase || '未识别')}</li>
                     <li><strong>严重等级:</strong> ${escapeHtml(initialInputs.severity || '未识别')}</li>
-                    <li><strong>RootCause:</strong> ${escapeHtml(initialInputs.initialCause || '未识别')}</li>
+                    <li><strong>Bug 原始 RootCause:</strong> ${escapeHtml(initialInputs.initialCause || '未识别')}</li>
+                    <li><strong>Bug 原始 Resolution:</strong> ${escapeHtml(initialInputs.resolution || '未识别')}</li>
+                    <li><strong>Bug 原始 Test Suggestion:</strong> ${escapeHtml(initialInputs.testSuggestion || '未识别')}</li>
                     <li><strong>优先改进方向:</strong> ${escapeHtml(initialInputs.improvementFocuses.join('、') || '未指定')}</li>
                 </ul>
 
@@ -1342,7 +1423,9 @@ ${visibleConversation}`;
                 <h4>${bugSummary ? '3' : '2'}. 改进判断</h4>
                 <p class="font-semibold text-lg bg-blue-50 text-blue-800 p-3 rounded-md">${escapeHtml(report.improvementDecision)}</p>
                 ${report.decisionSummary ? `<p><strong>判断说明:</strong> ${escapeHtml(report.decisionSummary)}</p>` : ''}
-                ${report.rootCauseSummary ? `<p><strong>根因链路:</strong> ${escapeHtml(report.rootCauseSummary)}</p>` : ''}
+                ${report.rootCauseAssessment ? `<p><strong>根因判断状态:</strong> ${escapeHtml(report.rootCauseAssessment)}</p>` : ''}
+                ${report.rootCauseSummary ? `<p><strong>AI 综合根因分析:</strong> ${escapeHtml(report.rootCauseSummary)}</p>` : ''}
+                ${report.developerConfirmationNote ? `<p><strong>需进一步与研发确认:</strong> ${escapeHtml(report.developerConfirmationNote)}</p>` : ''}
 
                 <h5>最值得补强的漏失环节</h5>
                 ${renderSimpleList(report.missedOpportunities, 'AI 未识别出明确的漏失环节。')}
@@ -1418,6 +1501,8 @@ ${visibleConversation}`;
                     rawContext: analysisState.bugImport.fullContext || buildBugContextText(analysisState.bugImport.data),
                     desc: importedSummary.desc,
                     initialCause: importedSummary.initialCause,
+                    resolution: importedSummary.resolution,
+                    testSuggestion: importedSummary.testSuggestion,
                     version: importedSummary.version,
                     phase: importedSummary.phase,
                     severity: importedSummary.severity,
