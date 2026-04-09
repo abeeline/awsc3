@@ -1,0 +1,1306 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 漏测分析助手</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', 'Helvetica Neue', 'Arial', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+        }
+        .chat-bubble {
+            max-width: 88%;
+            padding: 12px 16px;
+            border-radius: 16px;
+            margin-bottom: 10px;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+        }
+        .chat-bubble-ai {
+            background-color: #e2e8f0;
+            color: #0f172a;
+            align-self: flex-start;
+            border-bottom-left-radius: 4px;
+        }
+        .chat-bubble-user {
+            background-color: #1d4ed8;
+            color: #ffffff;
+            align-self: flex-end;
+            border-bottom-right-radius: 4px;
+        }
+        .disabled-ui {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+        .loading-dots span {
+            animation: blink 1.4s infinite both;
+        }
+        .loading-dots span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+        .loading-dots span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+        .focus-chip input:checked + span {
+            background: #dbeafe;
+            border-color: #60a5fa;
+            color: #1d4ed8;
+        }
+        @keyframes blink {
+            0% { opacity: 0.2; }
+            20% { opacity: 1; }
+            100% { opacity: 0.2; }
+        }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen flex flex-col items-center p-4 sm:p-6 md:p-8">
+    <div class="w-full max-w-7xl mx-auto">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-slate-900">AI 漏测分析助手</h1>
+            <p class="text-slate-600 mt-2">导入 Bugzilla 问题详情，围绕“是否可内部改进、该补什么、如何补测”完成一次面向改进的回溯分析。</p>
+        </header>
+
+        <main class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div id="initial-input-section" class="space-y-6">
+                <div class="bg-white p-6 rounded-xl shadow-md">
+                    <h2 class="text-xl font-semibold text-slate-800 border-b pb-3 mb-4">第一步：导入问题信息</h2>
+                    <div class="space-y-5">
+                        <div class="rounded-xl border border-blue-200 bg-blue-50 p-4">
+                            <label for="bugzilla-url" class="block text-sm font-medium text-slate-700">Bugzilla 链接</label>
+                            <div class="mt-2 flex flex-col sm:flex-row gap-3">
+                                <input id="bugzilla-url" type="url" class="flex-1 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" placeholder="粘贴 Bugzilla 问题链接，例如 https://bugzilla.example.com/show_bug.cgi?id=12345">
+                                <button id="fetch-bugzilla-btn" type="button" class="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-blue-700 transition-colors">抓取问题详情</button>
+                            </div>
+                            <p class="mt-2 text-xs text-slate-600">会优先尝试 Bugzilla REST 接口，再回退到页面 HTML 解析。若浏览器因登录态或跨域限制无法直连，请继续使用下面的“原始内容补充”。</p>
+                            <div id="bugzilla-status" class="hidden mt-3 rounded-lg px-3 py-2 text-sm"></div>
+                        </div>
+
+                        <div id="bug-preview-card" class="hidden rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-4">
+                            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                                <div>
+                                    <h3 class="text-sm font-semibold text-slate-800">已导入 Bugzilla 关键信息</h3>
+                                    <p id="bug-preview-title" class="text-sm text-slate-600 mt-1"></p>
+                                </div>
+                                <span id="bug-preview-source" class="inline-flex items-center rounded-full bg-slate-200 px-3 py-1 text-xs font-medium text-slate-700"></span>
+                            </div>
+                            <div id="bug-preview-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm"></div>
+                            <div>
+                                <p class="text-sm font-medium text-slate-700">关键评论摘录</p>
+                                <div id="bug-comments-preview" class="mt-2 space-y-2"></div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label for="manual-raw-context" class="block text-sm font-medium text-slate-700">Bug 原始内容补充 (可选)</label>
+                            <textarea id="manual-raw-context" rows="5" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" placeholder="如果链接无法直接抓取，可粘贴 Bugzilla 页面文本、rootcause、关键评论、复现路径等。"></textarea>
+                        </div>
+
+                        <div>
+                            <label for="problem-desc" class="block text-sm font-medium text-slate-700">问题描述 / 分析背景</label>
+                            <textarea id="problem-desc" rows="4" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" placeholder="可手动补充业务影响、复现范围、客户反馈、修复背景等。若已抓取 Bugzilla，这里只需补充页面里没有的信息。"></textarea>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label for="root-cause-initial" class="block text-sm font-medium text-slate-700">初步 RootCause (可选)</label>
+                                <input type="text" id="root-cause-initial" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" placeholder="例如：测试场景遗漏、需求理解偏差、环境组合未覆盖">
+                            </div>
+                            <div>
+                                <label for="problem-version" class="block text-sm font-medium text-slate-700">问题版本</label>
+                                <input type="text" id="problem-version" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" placeholder="例如：v1.2.3、Sprint 23、客户版本 A">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label for="discovery-phase" class="block text-sm font-medium text-slate-700">发现阶段</label>
+                                <select id="discovery-phase" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                                    <option>UAT (用户验收测试)</option>
+                                    <option>灰度环境</option>
+                                    <option selected>线上生产环境</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="severity-level" class="block text-sm font-medium text-slate-700">严重等级</label>
+                                <select id="severity-level" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                                    <option>致命 (Blocker)</option>
+                                    <option selected>严重 (Critical)</option>
+                                    <option>一般 (Major)</option>
+                                    <option>轻微 (Minor)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-xl shadow-md">
+                    <h2 class="text-xl font-semibold text-slate-800 border-b pb-3 mb-4">第二步：设置改进分析重点</h2>
+                    <div class="space-y-5">
+                        <div>
+                            <p class="text-sm font-medium text-slate-700">优先关注哪些改进方向</p>
+                            <p class="text-xs text-slate-500 mt-1">这些维度会影响 AI 的提问角度和最终建议。默认全部勾选，更适合完整回溯。</p>
+                            <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <label class="focus-chip cursor-pointer">
+                                    <input type="checkbox" class="sr-only improvement-focus" value="需求澄清与评审" checked>
+                                    <span class="block rounded-lg border border-slate-300 px-3 py-3 text-sm font-medium text-slate-700 transition-colors">需求澄清与评审</span>
+                                </label>
+                                <label class="focus-chip cursor-pointer">
+                                    <input type="checkbox" class="sr-only improvement-focus" value="风险识别与测试策略" checked>
+                                    <span class="block rounded-lg border border-slate-300 px-3 py-3 text-sm font-medium text-slate-700 transition-colors">风险识别与测试策略</span>
+                                </label>
+                                <label class="focus-chip cursor-pointer">
+                                    <input type="checkbox" class="sr-only improvement-focus" value="测试场景与边界覆盖" checked>
+                                    <span class="block rounded-lg border border-slate-300 px-3 py-3 text-sm font-medium text-slate-700 transition-colors">测试场景与边界覆盖</span>
+                                </label>
+                                <label class="focus-chip cursor-pointer">
+                                    <input type="checkbox" class="sr-only improvement-focus" value="测试数据构造" checked>
+                                    <span class="block rounded-lg border border-slate-300 px-3 py-3 text-sm font-medium text-slate-700 transition-colors">测试数据构造</span>
+                                </label>
+                                <label class="focus-chip cursor-pointer">
+                                    <input type="checkbox" class="sr-only improvement-focus" value="环境/配置/网络组合" checked>
+                                    <span class="block rounded-lg border border-slate-300 px-3 py-3 text-sm font-medium text-slate-700 transition-colors">环境/配置/网络组合</span>
+                                </label>
+                                <label class="focus-chip cursor-pointer">
+                                    <input type="checkbox" class="sr-only improvement-focus" value="第三方/兼容性/客户差异联调" checked>
+                                    <span class="block rounded-lg border border-slate-300 px-3 py-3 text-sm font-medium text-slate-700 transition-colors">第三方/兼容性/客户差异联调</span>
+                                </label>
+                                <label class="focus-chip cursor-pointer">
+                                    <input type="checkbox" class="sr-only improvement-focus" value="回归准入与发布验证" checked>
+                                    <span class="block rounded-lg border border-slate-300 px-3 py-3 text-sm font-medium text-slate-700 transition-colors">回归准入与发布验证</span>
+                                </label>
+                                <label class="focus-chip cursor-pointer">
+                                    <input type="checkbox" class="sr-only improvement-focus" value="自动化与监控前置" checked>
+                                    <span class="block rounded-lg border border-slate-300 px-3 py-3 text-sm font-medium text-slate-700 transition-colors">自动化与监控前置</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label for="internal-tags" class="block text-sm font-medium text-slate-700">内部标签映射 (可选，每行一个)</label>
+                            <textarea id="internal-tags" rows="12" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" placeholder="如果仍需兼容内部口径，可填写候选标签。AI 会把它作为次要输出，而不是主结论。"><无法分析和覆盖>
+NA-版本未通过验收测试
+NA-非系统测试验证范围
+NA-系统测试不能覆盖
+无RootCause无法分析
+无效问题
+
+<客户版本及需求差异>
+版本同步问题
+第三方厂商解决
+第三方应用问题
+客户差异化硬件调测
+平台硬件不支持
+特殊需求
+通用需求
+
+<漏测>
+漏测-case 覆盖不全
+漏测-测试策略
+特定网络环境问题
+
+<已知问题>
+已知问题-客户同步测试
+已知问题-评估不影响量产交付
+已知问题-项目决策不合入平台</textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-xl shadow-md">
+                    <h2 class="text-xl font-semibold text-slate-800 border-b pb-3 mb-4">第三步：AI 模型设置</h2>
+                    <div class="space-y-4">
+                        <div>
+                            <label for="model-select" class="block text-sm font-medium text-slate-700">选择模型</label>
+                            <select id="model-select" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                                <option value="gemini">Gemini API</option>
+                                <option value="custom">自定义模型 (API)</option>
+                            </select>
+                        </div>
+                        <div class="space-y-4">
+                            <div>
+                                <label for="api-endpoint" class="block text-sm font-medium text-slate-700">API Endpoint</label>
+                                <input type="text" id="api-endpoint" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" placeholder="例如: https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest">
+                            </div>
+                            <div id="model-name-wrapper" class="hidden">
+                                <label for="model-name" class="block text-sm font-medium text-slate-700">模型名称 (Model Name)</label>
+                                <input type="text" id="model-name" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" placeholder="例如: gpt-4o, gpt-4.1, llama3">
+                            </div>
+                            <div>
+                                <label for="api-key" class="block text-sm font-medium text-slate-700">API Key</label>
+                                <input type="password" id="api-key" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" placeholder="">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <button id="start-analysis-btn" class="w-full bg-slate-900 text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-600 transition-transform transform hover:scale-[1.01]">
+                    开始 AI 分析
+                </button>
+            </div>
+
+            <div class="space-y-6" id="right-column">
+                <div class="bg-white p-6 rounded-xl shadow-md">
+                    <h2 class="text-xl font-semibold text-slate-800 border-b pb-3 mb-4">第四步：AI 互动分析</h2>
+                    <div id="chat-container" class="h-96 flex flex-col overflow-y-auto p-4 bg-slate-50 rounded-lg border border-slate-200">
+                        <div class="chat-bubble chat-bubble-ai">你好！我是漏测分析助手。你可以先粘贴 Bugzilla 链接导入详情，我会基于已知信息尽量少问重复问题，并把结论重点放在“如何改进与补测”。</div>
+                    </div>
+                    <div id="chat-input-area" class="mt-4 hidden">
+                        <div class="flex gap-2">
+                            <textarea id="user-input" rows="2" class="flex-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" placeholder="请补充业务背景、复现条件、需求口径、遗漏原因等..."></textarea>
+                            <button id="send-btn" class="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-blue-700">发送</button>
+                        </div>
+                    </div>
+                    <div id="loading-indicator" class="mt-4 hidden text-center text-slate-500">
+                        AI 思考中<span class="loading-dots"><span>.</span><span>.</span><span>.</span></span>
+                    </div>
+                </div>
+
+                <div id="report-section" class="bg-white p-6 rounded-xl shadow-md hidden">
+                    <h2 class="text-xl font-semibold text-slate-800 border-b pb-3 mb-4">第五步：生成改进分析报告</h2>
+                    <div id="report-output" class="prose max-w-none prose-slate">
+                        <p class="text-slate-500">完成分析后，将在此处生成完整报告。</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const startAnalysisBtn = document.getElementById('start-analysis-btn');
+        const initialInputSection = document.getElementById('initial-input-section');
+        const chatContainer = document.getElementById('chat-container');
+        const reportSection = document.getElementById('report-section');
+        const reportOutput = document.getElementById('report-output');
+        const modelSelect = document.getElementById('model-select');
+        const modelNameWrapper = document.getElementById('model-name-wrapper');
+        const apiEndpointInput = document.getElementById('api-endpoint');
+        const rightColumn = document.getElementById('right-column');
+        const chatInputArea = document.getElementById('chat-input-area');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const bugzillaUrlInput = document.getElementById('bugzilla-url');
+        const fetchBugzillaBtn = document.getElementById('fetch-bugzilla-btn');
+        const bugzillaStatus = document.getElementById('bugzilla-status');
+        const bugPreviewCard = document.getElementById('bug-preview-card');
+        const bugPreviewTitle = document.getElementById('bug-preview-title');
+        const bugPreviewSource = document.getElementById('bug-preview-source');
+        const bugPreviewGrid = document.getElementById('bug-preview-grid');
+        const bugCommentsPreview = document.getElementById('bug-comments-preview');
+
+        let analysisState = {
+            conversationHistory: [],
+            initialInputs: {},
+            modelConfig: {},
+            turnCount: 0,
+            bugImport: {
+                data: null,
+                lastError: null
+            }
+        };
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function normalizeWhitespace(text) {
+            return String(text ?? '')
+                .replace(/\u00A0/g, ' ')
+                .replace(/\r/g, '')
+                .replace(/[ \t]+/g, ' ')
+                .replace(/\n{3,}/g, '\n\n')
+                .trim();
+        }
+
+        function cleanText(text) {
+            return normalizeWhitespace(String(text ?? '').replace(/\s+\n/g, '\n'));
+        }
+
+        function addMessage(sender, text) {
+            const bubble = document.createElement('div');
+            bubble.className = `chat-bubble chat-bubble-${sender}`;
+            bubble.textContent = text;
+            chatContainer.appendChild(bubble);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function setThinking(isThinking) {
+            if (isThinking) {
+                loadingIndicator.classList.remove('hidden');
+                chatInputArea.classList.add('hidden');
+            } else {
+                loadingIndicator.classList.add('hidden');
+                chatInputArea.classList.remove('hidden');
+                userInput.focus();
+            }
+        }
+
+        function setBugzillaStatus(type, message) {
+            const palette = {
+                loading: 'bg-blue-50 text-blue-700 border border-blue-200',
+                success: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+                warning: 'bg-amber-50 text-amber-700 border border-amber-200',
+                error: 'bg-rose-50 text-rose-700 border border-rose-200'
+            };
+            bugzillaStatus.className = `mt-3 rounded-lg px-3 py-2 text-sm ${palette[type] || palette.loading}`;
+            bugzillaStatus.textContent = message;
+            bugzillaStatus.classList.remove('hidden');
+        }
+
+        function hideBugzillaStatus() {
+            bugzillaStatus.classList.add('hidden');
+            bugzillaStatus.textContent = '';
+        }
+
+        function getSelectedImprovementFocuses() {
+            return Array.from(document.querySelectorAll('.improvement-focus:checked')).map((input) => input.value);
+        }
+
+        function getInternalTags() {
+            return document.getElementById('internal-tags').value
+                .split('\n')
+                .map((item) => item.trim())
+                .filter(Boolean);
+        }
+
+        function stripThinkTags(text) {
+            if (!text) return '';
+            const lastClosingThinkTagIndex = text.lastIndexOf('</think>');
+            if (lastClosingThinkTagIndex !== -1) {
+                return text.substring(lastClosingThinkTagIndex + '</think>'.length).trim();
+            }
+            if (text.trim().startsWith('<think>')) {
+                return '';
+            }
+            return text.trim();
+        }
+
+        function extractBugIdFromUrl(rawUrl) {
+            try {
+                const url = new URL(rawUrl);
+                const fromQuery = url.searchParams.get('id') || url.searchParams.get('bug_id');
+                if (fromQuery) {
+                    return fromQuery;
+                }
+                const pathMatch = url.pathname.match(/(\d+)(?:\/)?$/);
+                return pathMatch ? pathMatch[1] : '';
+            } catch (error) {
+                return '';
+            }
+        }
+
+        function normalizeBugzillaFieldLabel(label) {
+            return cleanText(label)
+                .replace(/[：:]+$/, '')
+                .toLowerCase();
+        }
+
+        function formatFieldValue(value) {
+            if (Array.isArray(value)) {
+                return value.map((item) => formatFieldValue(item)).filter(Boolean).join('、');
+            }
+            if (value && typeof value === 'object') {
+                if ('name' in value) return cleanText(value.name);
+                if ('value' in value) return cleanText(value.value);
+                return cleanText(JSON.stringify(value));
+            }
+            return cleanText(String(value ?? ''));
+        }
+
+        function findRootCauseValue(fieldMap) {
+            const keywords = ['rootcause', 'root cause', 'root_cause', '根因', '原因'];
+            for (const [key, value] of Object.entries(fieldMap)) {
+                const normalized = key.toLowerCase();
+                if (keywords.some((keyword) => normalized.includes(keyword))) {
+                    return value;
+                }
+            }
+            return '';
+        }
+
+        function collectFieldMapFromDocument(doc) {
+            const fieldMap = {};
+
+            doc.querySelectorAll('[id^="field-value-"]').forEach((node) => {
+                const key = node.id.replace('field-value-', '');
+                const value = cleanText(node.textContent);
+                if (key && value) {
+                    fieldMap[key] = value;
+                }
+            });
+
+            doc.querySelectorAll('tr').forEach((row) => {
+                const cells = Array.from(row.querySelectorAll('th, td'));
+                if (cells.length >= 2) {
+                    const label = normalizeBugzillaFieldLabel(cells[0].textContent);
+                    const value = cleanText(cells[1].textContent);
+                    if (label && value && value.length < 400) {
+                        fieldMap[label] = value;
+                    }
+                }
+            });
+
+            doc.querySelectorAll('dt').forEach((dt) => {
+                const dd = dt.nextElementSibling;
+                if (dd && dd.tagName.toLowerCase() === 'dd') {
+                    const label = normalizeBugzillaFieldLabel(dt.textContent);
+                    const value = cleanText(dd.textContent);
+                    if (label && value && value.length < 400) {
+                        fieldMap[label] = value;
+                    }
+                }
+            });
+
+            return fieldMap;
+        }
+
+        function collectCommentsFromDocument(doc) {
+            const selectorList = [
+                '[id^="comment_text_"]',
+                '.bz_comment_text',
+                '.comment-text',
+                '.comment-body',
+                '.bz_first_comment',
+                '.comment_text'
+            ];
+            const commentNodes = [];
+            selectorList.forEach((selector) => {
+                doc.querySelectorAll(selector).forEach((node) => {
+                    if (!commentNodes.includes(node)) {
+                        commentNodes.push(node);
+                    }
+                });
+            });
+
+            return commentNodes
+                .map((node, index) => {
+                    const container = node.closest('.bz_comment') || node.closest('.comment') || node.parentElement;
+                    const author = cleanText(
+                        container?.querySelector('.bz_comment_user, .fn, .vcard, .author, .comment-user')?.textContent || `评论${index + 1}`
+                    );
+                    const time = cleanText(
+                        container?.querySelector('.bz_comment_time, .comment-time, time')?.textContent || ''
+                    );
+                    const text = cleanText(node.textContent);
+                    return { author, time, text };
+                })
+                .filter((comment) => comment.text)
+                .slice(0, 20);
+        }
+
+        function buildRestBugData(bugPayload, commentsPayload, rawUrl, bugId) {
+            const bug = bugPayload?.bugs?.[0];
+            if (!bug) {
+                return null;
+            }
+
+            const fieldMap = {};
+            Object.entries(bug).forEach(([key, value]) => {
+                const formatted = formatFieldValue(value);
+                if (formatted && formatted.length < 500) {
+                    fieldMap[key] = formatted;
+                }
+            });
+
+            const comments = commentsPayload?.bugs?.[bug.id || bugId]?.comments || [];
+            const normalizedComments = comments
+                .map((comment) => ({
+                    author: cleanText(comment.creator || comment.author || ''),
+                    time: cleanText(comment.time || comment.creation_time || ''),
+                    text: cleanText(comment.text || comment.body || '')
+                }))
+                .filter((comment) => comment.text)
+                .slice(0, 20);
+
+            return {
+                bugId: String(bug.id || bugId || ''),
+                url: rawUrl,
+                source: 'Bugzilla REST API',
+                summary: cleanText(bug.summary || bug.short_desc || ''),
+                status: cleanText(bug.status || bug.bug_status || ''),
+                severity: cleanText(bug.severity || bug.bug_severity || ''),
+                priority: cleanText(bug.priority || ''),
+                version: cleanText(formatFieldValue(bug.version || bug.target_milestone || bug.cf_build_version || '')),
+                rootCause: cleanText(findRootCauseValue(fieldMap)),
+                component: cleanText(formatFieldValue(bug.component || '')),
+                assignee: cleanText(formatFieldValue(bug.assigned_to_detail?.real_name || bug.assigned_to || '')),
+                reporter: cleanText(formatFieldValue(bug.creator_detail?.real_name || bug.creator || '')),
+                fieldMap,
+                comments: normalizedComments
+            };
+        }
+
+        function buildHtmlBugData(doc, rawUrl, bugId) {
+            const fieldMap = collectFieldMapFromDocument(doc);
+            const title =
+                cleanText(doc.querySelector('#field-value-short_desc, #short_desc_nonedit_display, .bz_short_desc_container, .bz_bug_title')?.textContent) ||
+                cleanText(doc.querySelector('title')?.textContent || '');
+
+            const normalizedTitle = title.replace(/^Bug\s+\d+\s*[–-]\s*/i, '');
+            const statusText =
+                fieldMap.bug_status ||
+                fieldMap.status ||
+                cleanText(doc.querySelector('#field-value-bug_status, #field-value-status')?.textContent || '');
+
+            const severityText =
+                fieldMap.bug_severity ||
+                fieldMap.severity ||
+                cleanText(doc.querySelector('#field-value-bug_severity, #field-value-severity')?.textContent || '');
+
+            const versionText =
+                fieldMap.version ||
+                fieldMap.target_milestone ||
+                fieldMap['target milestone'] ||
+                cleanText(doc.querySelector('#field-value-version, #field-value-target_milestone')?.textContent || '');
+
+            return {
+                bugId: String(bugId || ''),
+                url: rawUrl,
+                source: 'Bugzilla 页面解析',
+                summary: normalizedTitle,
+                status: statusText,
+                severity: severityText,
+                priority: fieldMap.priority || cleanText(doc.querySelector('#field-value-priority')?.textContent || ''),
+                version: versionText,
+                rootCause: cleanText(findRootCauseValue(fieldMap)),
+                component: fieldMap.component || '',
+                assignee: fieldMap.assigned_to || fieldMap.assignee || '',
+                reporter: fieldMap.reporter || fieldMap.creator || '',
+                fieldMap,
+                comments: collectCommentsFromDocument(doc)
+            };
+        }
+
+        function mergeBugData(primary, secondary) {
+            if (!primary) return secondary;
+            if (!secondary) return primary;
+
+            return {
+                bugId: primary.bugId || secondary.bugId,
+                url: primary.url || secondary.url,
+                source: primary.source === secondary.source ? primary.source : `${primary.source} + ${secondary.source}`,
+                summary: primary.summary || secondary.summary,
+                status: primary.status || secondary.status,
+                severity: primary.severity || secondary.severity,
+                priority: primary.priority || secondary.priority,
+                version: primary.version || secondary.version,
+                rootCause: primary.rootCause || secondary.rootCause,
+                component: primary.component || secondary.component,
+                assignee: primary.assignee || secondary.assignee,
+                reporter: primary.reporter || secondary.reporter,
+                fieldMap: { ...secondary.fieldMap, ...primary.fieldMap },
+                comments: primary.comments?.length ? primary.comments : secondary.comments
+            };
+        }
+
+        function summarizeCommentText(text, maxLength = 220) {
+            const cleaned = cleanText(text);
+            if (cleaned.length <= maxLength) {
+                return cleaned;
+            }
+            return `${cleaned.slice(0, maxLength).trim()}...`;
+        }
+
+        function renderBugPreview(data) {
+            bugPreviewCard.classList.remove('hidden');
+            bugPreviewTitle.textContent = data.summary ? `${data.summary}${data.bugId ? ` (Bug ${data.bugId})` : ''}` : `Bug ${data.bugId || ''}`;
+            bugPreviewSource.textContent = data.source || '已导入';
+
+            const previewFields = [
+                ['状态', data.status],
+                ['严重级别', data.severity],
+                ['优先级', data.priority],
+                ['版本', data.version],
+                ['组件', data.component],
+                ['负责人', data.assignee],
+                ['提交人', data.reporter],
+                ['RootCause', data.rootCause]
+            ].filter(([, value]) => value);
+
+            bugPreviewGrid.innerHTML = previewFields
+                .map(([label, value]) => `
+                    <div class="rounded-lg bg-white border border-slate-200 px-3 py-3">
+                        <div class="text-xs uppercase tracking-wide text-slate-500">${escapeHtml(label)}</div>
+                        <div class="mt-1 text-sm text-slate-800">${escapeHtml(value)}</div>
+                    </div>
+                `)
+                .join('');
+
+            const comments = (data.comments || []).slice(0, 4);
+            if (!comments.length) {
+                bugCommentsPreview.innerHTML = '<div class="rounded-lg bg-white border border-slate-200 px-3 py-3 text-sm text-slate-500">未解析到评论，仍可继续人工补充。</div>';
+                return;
+            }
+
+            bugCommentsPreview.innerHTML = comments
+                .map((comment, index) => `
+                    <div class="rounded-lg bg-white border border-slate-200 px-3 py-3 text-sm">
+                        <div class="text-xs text-slate-500">${escapeHtml(comment.author || `评论${index + 1}`)}${comment.time ? ` · ${escapeHtml(comment.time)}` : ''}</div>
+                        <div class="mt-1 text-slate-700">${escapeHtml(summarizeCommentText(comment.text))}</div>
+                    </div>
+                `)
+                .join('');
+        }
+
+        function setSelectBySimilarity(selectElement, value) {
+            if (!value) return;
+            const normalizedValue = value.toLowerCase();
+            const matchedOption = Array.from(selectElement.options).find((option) => option.text.toLowerCase().includes(normalizedValue));
+            if (matchedOption) {
+                selectElement.value = matchedOption.value;
+            }
+        }
+
+        function populateFieldsFromBugData(data) {
+            const descInput = document.getElementById('problem-desc');
+            const rootCauseInput = document.getElementById('root-cause-initial');
+            const versionInput = document.getElementById('problem-version');
+            const severitySelect = document.getElementById('severity-level');
+
+            if (!descInput.value.trim()) {
+                const lines = [
+                    data.summary ? `Bug 摘要: ${data.summary}` : '',
+                    data.status ? `当前状态: ${data.status}` : '',
+                    data.comments?.[0]?.text ? `关键评论: ${summarizeCommentText(data.comments[0].text, 180)}` : ''
+                ].filter(Boolean);
+                descInput.value = lines.join('\n');
+            }
+
+            if (!rootCauseInput.value.trim() && data.rootCause) {
+                rootCauseInput.value = data.rootCause;
+            }
+
+            if (!versionInput.value.trim() && data.version) {
+                versionInput.value = data.version;
+            }
+
+            if (data.severity) {
+                setSelectBySimilarity(severitySelect, data.severity);
+            }
+        }
+
+        async function tryFetchJson(url) {
+            const response = await fetch(url, {
+                method: 'GET',
+                credentials: 'include',
+                headers: {
+                    Accept: 'application/json'
+                }
+            });
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            return response.json();
+        }
+
+        async function tryFetchHtml(url) {
+            const response = await fetch(url, {
+                method: 'GET',
+                credentials: 'include',
+                headers: {
+                    Accept: 'text/html,application/xhtml+xml'
+                }
+            });
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            return response.text();
+        }
+
+        async function fetchBugzillaDetails(rawUrl) {
+            const parsedUrl = new URL(rawUrl);
+            const bugId = extractBugIdFromUrl(rawUrl);
+            if (!bugId) {
+                throw new Error('未能从链接中识别 Bug ID，请确认链接格式。');
+            }
+
+            let restData = null;
+            let htmlData = null;
+            const errors = [];
+
+            try {
+                const bugPayload = await tryFetchJson(`${parsedUrl.origin}/rest/bug/${bugId}`);
+                let commentsPayload = null;
+                try {
+                    commentsPayload = await tryFetchJson(`${parsedUrl.origin}/rest/bug/${bugId}/comment`);
+                } catch (commentError) {
+                    errors.push(`评论接口获取失败: ${commentError.message}`);
+                }
+                restData = buildRestBugData(bugPayload, commentsPayload, rawUrl, bugId);
+            } catch (restError) {
+                errors.push(`REST 接口获取失败: ${restError.message}`);
+            }
+
+            if (!restData || !restData.rootCause || !(restData.comments || []).length) {
+                try {
+                    const html = await tryFetchHtml(rawUrl);
+                    const doc = new DOMParser().parseFromString(html, 'text/html');
+                    htmlData = buildHtmlBugData(doc, rawUrl, bugId);
+                } catch (htmlError) {
+                    errors.push(`页面解析失败: ${htmlError.message}`);
+                }
+            }
+
+            const merged = mergeBugData(restData, htmlData);
+            if (!merged) {
+                throw new Error(`${errors.join('；')}。这通常意味着浏览器被跨域策略、登录态或站点权限拦截。`);
+            }
+
+            return {
+                data: merged,
+                warnings: errors
+            };
+        }
+
+        async function importBugzillaData() {
+            const bugUrl = bugzillaUrlInput.value.trim();
+            if (!bugUrl) {
+                alert('请先粘贴 Bugzilla 链接。');
+                return null;
+            }
+
+            hideBugzillaStatus();
+            setBugzillaStatus('loading', '正在抓取 Bugzilla 详情，请稍候...');
+            fetchBugzillaBtn.disabled = true;
+
+            try {
+                const result = await fetchBugzillaDetails(bugUrl);
+                analysisState.bugImport.data = result.data;
+                analysisState.bugImport.lastError = null;
+
+                renderBugPreview(result.data);
+                populateFieldsFromBugData(result.data);
+
+                const warningMessage = result.warnings.length ? `，但有部分回退/告警：${result.warnings.join('；')}` : '';
+                setBugzillaStatus('success', `Bugzilla 信息导入成功${warningMessage}`);
+                return result.data;
+            } catch (error) {
+                analysisState.bugImport.data = null;
+                analysisState.bugImport.lastError = error.message;
+                bugPreviewCard.classList.add('hidden');
+                setBugzillaStatus('warning', `自动抓取失败：${error.message} 你仍然可以直接粘贴“Bug 原始内容补充”继续分析。`);
+                return null;
+            } finally {
+                fetchBugzillaBtn.disabled = false;
+            }
+        }
+
+        function buildBugContextText(bugData) {
+            if (!bugData) {
+                return '未导入 Bugzilla 详情。';
+            }
+
+            const coreLines = [
+                bugData.url ? `Bug 链接: ${bugData.url}` : '',
+                bugData.bugId ? `Bug ID: ${bugData.bugId}` : '',
+                bugData.summary ? `摘要: ${bugData.summary}` : '',
+                bugData.status ? `状态: ${bugData.status}` : '',
+                bugData.severity ? `严重级别: ${bugData.severity}` : '',
+                bugData.priority ? `优先级: ${bugData.priority}` : '',
+                bugData.version ? `版本: ${bugData.version}` : '',
+                bugData.component ? `组件: ${bugData.component}` : '',
+                bugData.assignee ? `负责人: ${bugData.assignee}` : '',
+                bugData.reporter ? `提交人: ${bugData.reporter}` : '',
+                bugData.rootCause ? `RootCause: ${bugData.rootCause}` : '',
+                bugData.source ? `数据来源: ${bugData.source}` : ''
+            ].filter(Boolean);
+
+            const extraFields = Object.entries(bugData.fieldMap || {})
+                .filter(([key, value]) => value && !['summary', 'short_desc', 'status', 'bug_status', 'severity', 'bug_severity', 'priority', 'version', 'target_milestone', 'component', 'assigned_to', 'reporter', 'creator'].includes(key.toLowerCase()))
+                .slice(0, 12)
+                .map(([key, value]) => `${key}: ${value}`);
+
+            const comments = (bugData.comments || []).slice(0, 5).map((comment, index) => {
+                const title = comment.author || `评论${index + 1}`;
+                return `[${title}${comment.time ? ` | ${comment.time}` : ''}] ${summarizeCommentText(comment.text, 350)}`;
+            });
+
+            return [
+                coreLines.join('\n'),
+                extraFields.length ? `其他字段:\n${extraFields.join('\n')}` : '',
+                comments.length ? `关键评论:\n${comments.join('\n')}` : ''
+            ].filter(Boolean).join('\n\n');
+        }
+
+        function buildInitialAnalysisContext() {
+            const desc = document.getElementById('problem-desc').value.trim();
+            const manualRawContext = document.getElementById('manual-raw-context').value.trim();
+            const internalTags = getInternalTags();
+            const improvementFocuses = getSelectedImprovementFocuses();
+
+            return `这是本次漏测回溯分析的已知信息，请优先基于这些内容提问，不要重复询问已经明确的信息。
+
+【Bugzilla 导入信息】
+${buildBugContextText(analysisState.initialInputs.importedBug)}
+
+【人工补充说明】
+问题描述 / 分析背景: ${desc || '未补充'}
+Bug 原始内容补充: ${manualRawContext || '未补充'}
+初步 RootCause: ${analysisState.initialInputs.initialCause || '未填写'}
+问题版本: ${analysisState.initialInputs.version || '未填写'}
+发现阶段: ${analysisState.initialInputs.phase}
+严重等级: ${analysisState.initialInputs.severity}
+
+【分析关注点】
+优先改进方向: ${improvementFocuses.length ? improvementFocuses.join('、') : '未指定'}
+内部标签候选（仅供参考，不要把它当成主目标）: ${internalTags.length ? internalTags.join('、') : '未提供'}
+
+请围绕“这个问题是否属于内部可改进、最值得补强的环节是什么、后续应该补哪些测试或流程动作”开始提问。`;
+        }
+
+        async function callModelAPI({ messages, systemPrompt = '', temperature = 0.4, maxTokens = 2048 }) {
+            const { modelType, endpoint: rawEndpoint, apiKey, modelName } = analysisState.modelConfig;
+            const endpoint = rawEndpoint.trim().replace(/\/$/, '');
+
+            let payload;
+            let headers = { 'Content-Type': 'application/json' };
+            let finalEndpoint = endpoint;
+
+            if (modelType === '自定义模型 (API)') {
+                headers.Authorization = `Bearer ${apiKey}`;
+                payload = {
+                    model: modelName || 'gpt-4o',
+                    messages: [
+                        ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
+                        ...messages
+                    ],
+                    temperature,
+                    max_tokens: maxTokens
+                };
+            } else {
+                finalEndpoint = `${endpoint}:generateContent?key=${apiKey}`;
+                payload = {
+                    contents: messages.map((message) => ({
+                        role: message.role === 'assistant' ? 'model' : 'user',
+                        parts: [{ text: message.content }]
+                    })),
+                    generationConfig: {
+                        temperature,
+                        maxOutputTokens: maxTokens
+                    }
+                };
+                if (systemPrompt) {
+                    payload.systemInstruction = {
+                        parts: [{ text: systemPrompt }]
+                    };
+                }
+            }
+
+            const response = await fetch(finalEndpoint, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                let errorDetails = response.statusText;
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    try {
+                        const errorBody = await response.json();
+                        errorDetails = errorBody.error?.message || JSON.stringify(errorBody);
+                    } catch (error) {
+                        errorDetails = '无法解析 JSON 错误响应。';
+                    }
+                } else {
+                    try {
+                        errorDetails = await response.text();
+                    } catch (error) {
+                        errorDetails = '无法读取错误响应体。';
+                    }
+                }
+                throw new Error(`API 请求失败，状态码: ${response.status}. ${errorDetails}`);
+            }
+
+            const contentType = response.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+                let responseText = '';
+                try {
+                    responseText = await response.text();
+                } catch (error) {
+                    responseText = '';
+                }
+                throw new Error(`API 响应格式错误：期望 JSON，但收到了 ${contentType || '未知类型'}。响应内容预览: ${responseText.slice(0, 120)}`);
+            }
+
+            const result = await response.json();
+
+            if (modelType === '自定义模型 (API)') {
+                const rawContent = result.choices?.[0]?.message?.content;
+                if (!rawContent) {
+                    throw new Error('从自定义模型返回的 API 响应无效。');
+                }
+                return stripThinkTags(rawContent);
+            }
+
+            const rawContent = result.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!rawContent) {
+                throw new Error('从 Gemini 模型返回的 API 响应无效。');
+            }
+            return stripThinkTags(rawContent);
+        }
+
+        async function startConversation() {
+            setThinking(true);
+            const systemPrompt = `你是一名资深的软件测试质量负责人。你的任务是做一次“面向改进”的漏测回溯分析，而不是只做内部标签分类。
+
+你的工作重点：
+1. 判断这个问题是否属于内部可改进、部分可改进、暂不作为内部改进项，或信息仍不足。
+2. 优先识别最值得补强的环节，例如：需求澄清、风险识别、测试策略、场景覆盖、数据构造、环境组合、第三方联调、回归准入、自动化和监控。
+3. 基于已知 Bugzilla 信息提问，只补齐真正影响改进决策的缺口，避免重复追问。
+4. 如果问题主要由客户差异、第三方限制或非测试覆盖范围引起，也要分析内部还能提前识别、隔离或降风险的部分。
+
+对话规则：
+- 每次只问 1-2 个最关键的问题。
+- 信息足够时立即结束，在回复最后单独一行输出 ANALYSIS_COMPLETE。
+- 整体控制在 4 轮左右，最多 5 轮用户回复。`;
+
+            const firstUserMessage = buildInitialAnalysisContext();
+
+            analysisState.conversationHistory.push({ role: 'user', content: firstUserMessage });
+
+            try {
+                const firstAiResponse = await callModelAPI({
+                    systemPrompt,
+                    messages: analysisState.conversationHistory,
+                    temperature: 0.5
+                });
+                analysisState.conversationHistory.push({ role: 'assistant', content: firstAiResponse });
+                addMessage('ai', firstAiResponse);
+            } catch (error) {
+                console.error('Error starting conversation:', error);
+                addMessage('ai', `抱歉，启动分析时遇到错误: ${error.message}`);
+            } finally {
+                setThinking(false);
+            }
+        }
+
+        async function handleUserMessage() {
+            const userText = userInput.value.trim();
+            if (!userText) return;
+
+            addMessage('user', userText);
+            analysisState.conversationHistory.push({ role: 'user', content: userText });
+            userInput.value = '';
+            analysisState.turnCount += 1;
+            setThinking(true);
+
+            try {
+                const maxTurns = 5;
+                if (analysisState.turnCount >= maxTurns) {
+                    addMessage('ai', '已达到本轮追问上限，我将基于当前信息生成最终改进分析报告。');
+                    triggerFinalAnalysis();
+                    return;
+                }
+
+                const systemPrompt = `你是一名资深的软件测试质量负责人。继续完成面向改进的漏测回溯分析。
+
+要求：
+- 基于现有对话提出最关键的下一个问题，不要重复已经确认的信息。
+- 问题要直接服务于改进判断和补测建议。
+- 如果信息已经足够，就在正常回复后最后单独一行输出 ANALYSIS_COMPLETE。`;
+
+                const aiResponse = await callModelAPI({
+                    systemPrompt,
+                    messages: analysisState.conversationHistory,
+                    temperature: 0.4
+                });
+
+                analysisState.conversationHistory.push({ role: 'assistant', content: aiResponse });
+
+                if (aiResponse.includes('ANALYSIS_COMPLETE')) {
+                    const cleanResponse = aiResponse.replace('ANALYSIS_COMPLETE', '').trim();
+                    if (cleanResponse) {
+                        addMessage('ai', cleanResponse);
+                    }
+                    addMessage('ai', '信息已足够，我会开始生成偏改进导向的最终报告。');
+                    setThinking(true);
+                    triggerFinalAnalysis();
+                } else {
+                    addMessage('ai', aiResponse);
+                    setThinking(false);
+                }
+            } catch (error) {
+                console.error('Error during conversation:', error);
+                addMessage('ai', `抱歉，对话时遇到错误: ${error.message}`);
+                setThinking(false);
+            }
+        }
+
+        function extractJsonBlock(rawText) {
+            const cleaned = stripThinkTags(rawText).replace(/```json|```/gi, '').trim();
+            try {
+                return JSON.parse(cleaned);
+            } catch (error) {
+                const firstBrace = cleaned.indexOf('{');
+                const lastBrace = cleaned.lastIndexOf('}');
+                if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+                    return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
+                }
+                throw error;
+            }
+        }
+
+        function normalizeFinalReport(report) {
+            return {
+                improvementDecision: cleanText(report.improvementDecision || '信息不足'),
+                decisionSummary: cleanText(report.decisionSummary || ''),
+                rootCauseSummary: cleanText(report.rootCauseSummary || ''),
+                missedOpportunities: Array.isArray(report.missedOpportunities) ? report.missedOpportunities.map(cleanText).filter(Boolean) : [],
+                improvementActions: Array.isArray(report.improvementActions) ? report.improvementActions.map(cleanText).filter(Boolean) : [],
+                testCaseSuggestions: Array.isArray(report.testCaseSuggestions) ? report.testCaseSuggestions.map((item) => ({
+                    title: cleanText(item.title || item.name || ''),
+                    setup: cleanText(item.setup || item.precondition || ''),
+                    checks: cleanText(item.checks || item.assertions || item.validation || '')
+                })).filter((item) => item.title || item.setup || item.checks) : [],
+                needMoreInfo: Array.isArray(report.needMoreInfo) ? report.needMoreInfo.map(cleanText).filter(Boolean) : [],
+                internalTag: cleanText(report.internalTag || '')
+            };
+        }
+
+        async function triggerFinalAnalysis() {
+            reportSection.classList.remove('hidden');
+            reportOutput.innerHTML = '<p class="text-slate-500">AI 正在整理回溯结论和改进建议，请稍候...</p>';
+
+            try {
+                const visibleConversation = analysisState.conversationHistory
+                    .map((message) => `${message.role === 'assistant' ? '专家' : '用户'}: ${message.content}`)
+                    .join('\n\n');
+
+                const focusText = analysisState.initialInputs.improvementFocuses.length
+                    ? analysisState.initialInputs.improvementFocuses.join('、')
+                    : '未指定';
+                const internalTagsText = analysisState.initialInputs.internalTags.length
+                    ? analysisState.initialInputs.internalTags.join('、')
+                    : '未提供';
+
+                const prompt = `你是一名资深 QA 负责人。请根据以下问题背景和完整对话，输出一份严格 JSON，不要使用 Markdown 代码块，不要添加 JSON 之外的任何文字。
+
+返回格式：
+{
+  "improvementDecision": "内部可改进 | 部分可改进 | 暂不作为内部改进项 | 信息不足",
+  "decisionSummary": "用 1-2 句话概括为什么这么判断",
+  "rootCauseSummary": "总结最关键的根因链路，强调导致漏失的具体环节",
+  "missedOpportunities": ["列出 2-4 个最关键的漏失环节"],
+  "improvementActions": ["列出 3 条可执行的改进动作"],
+  "testCaseSuggestions": [
+    {
+      "title": "测试场景标题",
+      "setup": "前置条件 / 数据 / 环境",
+      "checks": "关键验证点"
+    }
+  ],
+  "needMoreInfo": ["若仍有关键缺口，列出 0-3 条"],
+  "internalTag": "如果且仅当提供的内部标签中有明确适配项，返回一个；否则返回空字符串"
+}
+
+约束：
+- 主结论必须围绕“是否值得内部改进以及改什么”，不要把内部标签当作主输出。
+- 如果问题与客户差异、第三方限制、版本口径差异相关，也要判断内部是否仍可在风险识别、隔离、回归、前置检查上补强。
+- missedOpportunities 要写成能力或流程层面的遗漏，如需求澄清、测试策略、场景覆盖、测试数据、环境组合、兼容性联调、回归准入、自动化/监控。
+- improvementActions 必须具体、可执行、可落地。
+- testCaseSuggestions 返回 2-4 条即可。
+- 仅在下列标签中确实匹配时才返回 internalTag：${internalTagsText}
+
+分析关注点：${focusText}
+
+已知问题背景：
+${buildInitialAnalysisContext()}
+
+完整对话记录：
+${visibleConversation}`;
+
+                const rawResult = await callModelAPI({
+                    messages: [{ role: 'user', content: prompt }],
+                    temperature: 0.1,
+                    maxTokens: 2500
+                });
+
+                const parsedReport = normalizeFinalReport(extractJsonBlock(rawResult));
+                generateReport(parsedReport);
+            } catch (error) {
+                console.error('Final Analysis Error:', error);
+                addMessage('ai', `抱歉，生成报告时遇到错误: ${error.message}`);
+                reportOutput.innerHTML = `<p class="text-red-500">AI 分析失败: ${escapeHtml(error.message)}</p>`;
+            } finally {
+                setThinking(false);
+                chatInputArea.classList.add('hidden');
+            }
+        }
+
+        function renderSimpleList(items, emptyText = '暂无') {
+            if (!items.length) {
+                return `<p class="text-slate-500">${escapeHtml(emptyText)}</p>`;
+            }
+            return `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`;
+        }
+
+        function renderTestCases(testCases) {
+            if (!testCases.length) {
+                return '<p class="text-slate-500">暂无测试补强建议。</p>';
+            }
+
+            return testCases.map((testCase, index) => `
+                <div class="rounded-lg border border-slate-200 bg-slate-50 p-4 mb-3">
+                    <p class="font-semibold text-slate-800">${index + 1}. ${escapeHtml(testCase.title || '补充测试场景')}</p>
+                    ${testCase.setup ? `<p class="mt-2 text-sm text-slate-700"><strong>前置条件 / 数据：</strong>${escapeHtml(testCase.setup)}</p>` : ''}
+                    ${testCase.checks ? `<p class="mt-2 text-sm text-slate-700"><strong>关键验证点：</strong>${escapeHtml(testCase.checks)}</p>` : ''}
+                </div>
+            `).join('');
+        }
+
+        function generateReport(report) {
+            const { initialInputs, modelConfig } = analysisState;
+            const bugSummary = initialInputs.importedBug ? buildBugContextText(initialInputs.importedBug) : '';
+
+            let modelConfigHtml = `<li><strong>模型类型:</strong> ${escapeHtml(modelConfig.modelType)}</li><li><strong>API Endpoint:</strong> ${escapeHtml(modelConfig.endpoint)}</li>`;
+            if (modelConfig.modelName) {
+                modelConfigHtml += `<li><strong>模型名称:</strong> ${escapeHtml(modelConfig.modelName)}</li>`;
+            }
+
+            reportOutput.innerHTML = `
+                <h3 class="font-bold text-2xl text-slate-900">漏测改进分析报告</h3>
+                <p><strong>生成日期:</strong> ${escapeHtml(new Date().toLocaleString())}</p>
+
+                <h4>1. 问题概述</h4>
+                <ul>
+                    <li><strong>问题描述 / 分析背景:</strong> ${escapeHtml(initialInputs.desc || '未填写')}</li>
+                    <li><strong>问题版本:</strong> ${escapeHtml(initialInputs.version || '未填写')}</li>
+                    <li><strong>发现阶段:</strong> ${escapeHtml(initialInputs.phase || '未填写')}</li>
+                    <li><strong>严重等级:</strong> ${escapeHtml(initialInputs.severity || '未填写')}</li>
+                    <li><strong>初步 RootCause:</strong> ${escapeHtml(initialInputs.initialCause || '未填写')}</li>
+                    <li><strong>优先改进方向:</strong> ${escapeHtml(initialInputs.improvementFocuses.join('、') || '未指定')}</li>
+                </ul>
+
+                ${bugSummary ? `
+                    <h4>2. Bugzilla 导入摘要</h4>
+                    <div class="bg-slate-50 border border-slate-200 rounded-lg p-4 whitespace-pre-wrap">${escapeHtml(bugSummary)}</div>
+                ` : ''}
+
+                <h4>${bugSummary ? '3' : '2'}. 改进判断</h4>
+                <p class="font-semibold text-lg bg-blue-50 text-blue-800 p-3 rounded-md">${escapeHtml(report.improvementDecision)}</p>
+                ${report.decisionSummary ? `<p><strong>判断说明:</strong> ${escapeHtml(report.decisionSummary)}</p>` : ''}
+                ${report.rootCauseSummary ? `<p><strong>根因链路:</strong> ${escapeHtml(report.rootCauseSummary)}</p>` : ''}
+
+                <h5>最值得补强的漏失环节</h5>
+                ${renderSimpleList(report.missedOpportunities, 'AI 未识别出明确的漏失环节。')}
+
+                <h5>优先改进动作</h5>
+                ${renderSimpleList(report.improvementActions, 'AI 未生成明确的改进动作。')}
+
+                <h4>${bugSummary ? '4' : '3'}. 建议补充测试用例 / 场景</h4>
+                ${renderTestCases(report.testCaseSuggestions)}
+
+                ${report.needMoreInfo.length ? `
+                    <h4>${bugSummary ? '5' : '4'}. 建议继续核实的信息</h4>
+                    ${renderSimpleList(report.needMoreInfo)}
+                ` : ''}
+
+                ${report.internalTag ? `
+                    <h4>${bugSummary ? (report.needMoreInfo.length ? '6' : '5') : (report.needMoreInfo.length ? '5' : '4')}. 内部标签参考</h4>
+                    <p>${escapeHtml(report.internalTag)}</p>
+                ` : ''}
+
+                <h4>${bugSummary ? (report.needMoreInfo.length ? (report.internalTag ? '7' : '6') : (report.internalTag ? '6' : '5')) : (report.needMoreInfo.length ? (report.internalTag ? '6' : '5') : (report.internalTag ? '5' : '4'))}. AI 模型配置</h4>
+                <ul>${modelConfigHtml}</ul>
+            `;
+
+            reportSection.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        modelSelect.addEventListener('change', (event) => {
+            if (event.target.value === 'custom') {
+                modelNameWrapper.classList.remove('hidden');
+                apiEndpointInput.placeholder = '例如: https://api.openai.com/v1/chat/completions';
+            } else {
+                modelNameWrapper.classList.add('hidden');
+                apiEndpointInput.placeholder = '例如: https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest';
+            }
+        });
+
+        fetchBugzillaBtn.addEventListener('click', importBugzillaData);
+
+        startAnalysisBtn.addEventListener('click', async () => {
+            const desc = document.getElementById('problem-desc').value.trim();
+            const manualRawContext = document.getElementById('manual-raw-context').value.trim();
+            const apiKey = document.getElementById('api-key').value.trim();
+            const apiEndpoint = document.getElementById('api-endpoint').value.trim();
+            const bugUrl = bugzillaUrlInput.value.trim();
+            const improvementFocuses = getSelectedImprovementFocuses();
+            const importedBug = analysisState.bugImport.data;
+
+            if (bugUrl && !importedBug) {
+                await importBugzillaData();
+            }
+
+            if (!desc && !manualRawContext && !analysisState.bugImport.data) {
+                alert('请至少提供以下信息之一：Bugzilla 链接、问题描述、或 Bug 原始内容补充。');
+                return;
+            }
+
+            if (!improvementFocuses.length) {
+                alert('请至少选择一个“优先关注的改进方向”。');
+                return;
+            }
+
+            if (!apiEndpoint || !apiKey) {
+                alert('“API Endpoint”和“API Key”是必填项。');
+                return;
+            }
+
+            analysisState = {
+                conversationHistory: [],
+                initialInputs: {
+                    bugUrl,
+                    importedBug: analysisState.bugImport.data,
+                    rawContext: manualRawContext,
+                    desc,
+                    initialCause: document.getElementById('root-cause-initial').value.trim(),
+                    version: document.getElementById('problem-version').value.trim(),
+                    phase: document.getElementById('discovery-phase').value,
+                    severity: document.getElementById('severity-level').value,
+                    improvementFocuses,
+                    internalTags: getInternalTags()
+                },
+                modelConfig: {
+                    modelType: modelSelect.options[modelSelect.selectedIndex].text,
+                    endpoint: apiEndpoint,
+                    apiKey,
+                    modelName: modelSelect.value === 'custom' ? document.getElementById('model-name').value.trim() : null
+                },
+                turnCount: 0,
+                bugImport: {
+                    data: analysisState.bugImport.data,
+                    lastError: analysisState.bugImport.lastError
+                }
+            };
+
+            initialInputSection.classList.add('disabled-ui');
+            startAnalysisBtn.classList.add('disabled-ui');
+            chatContainer.innerHTML = '';
+            reportSection.classList.add('hidden');
+            reportOutput.innerHTML = '<p class="text-slate-500">完成分析后，将在此处生成完整报告。</p>';
+
+            rightColumn.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            addMessage('ai', '已收到你的问题信息。我会尽量利用 Bugzilla 已导入的细节，只追问真正影响改进判断的关键信息。');
+
+            startConversation();
+        });
+
+        sendBtn.addEventListener('click', handleUserMessage);
+        userInput.addEventListener('keypress', (event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                handleUserMessage();
+            }
+        });
+    </script>
+</body>
+</html>
