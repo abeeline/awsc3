@@ -1391,26 +1391,34 @@
             return TARGET_CLOSURE_TYPES.includes(closureType);
         }
 
-        function extractJsonCandidate(text) {
-            const normalized = String(text ?? "")
+        function normalizeJsonCandidateText(text) {
+            return String(text ?? "")
+                .replace(/^\uFEFF/, "")
                 .replace(/```json/gi, "```")
+                .replace(/```javascript/gi, "```")
+                .replace(/```js/gi, "```")
+                .replace(/[“”]/g, "\"")
+                .replace(/[‘’]/g, "'")
+                .replace(/\r/g, "")
                 .trim();
+        }
 
-            const direct = normalized.startsWith("```") && normalized.endsWith("```")
+        function stripCodeFence(text) {
+            const normalized = normalizeJsonCandidateText(text);
+            return normalized.startsWith("```") && normalized.endsWith("```")
                 ? normalized.replace(/^```/i, "").replace(/```$/i, "").trim()
                 : normalized;
+        }
 
-            try {
-                return JSON.parse(direct);
-            } catch (error) {
-                // keep going
-            }
-
+        function findBalancedJsonObjectText(text) {
+            const direct = stripCodeFence(text);
             let start = direct.indexOf("{");
+
             while (start !== -1) {
                 let depth = 0;
                 let inString = false;
                 let escaped = false;
+
                 for (let index = start; index < direct.length; index += 1) {
                     const char = direct[index];
                     if (inString) {
@@ -1428,15 +1436,73 @@
                     } else if (char === "}") {
                         depth -= 1;
                         if (depth === 0) {
-                            const candidate = direct.slice(start, index + 1);
-                            return JSON.parse(candidate);
+                            return direct.slice(start, index + 1);
                         }
                     }
                 }
+
                 start = direct.indexOf("{", start + 1);
             }
 
-            throw new Error("未识别到合法 JSON 对象。");
+            return "";
+        }
+
+        function repairJsonLikeText(text) {
+            return String(text ?? "")
+                .replace(/^\uFEFF/, "")
+                .replace(/[“”]/g, "\"")
+                .replace(/[‘’]/g, "'")
+                .replace(/,\s*([}\]])/g, "$1")
+                .replace(/:\s*undefined\b/g, ": null")
+                .replace(/:\s*NaN\b/g, ": null")
+                .replace(/:\s*Infinity\b/g, ": null")
+                .replace(/}\s*[，,]?\s*(?:与|和|并且|以及)\s*"/g, " , \"")
+                .replace(/"\s*(?:与|和|并且|以及)\s*"/g, "\", \"")
+                .replace(/]\s*[，,]?\s*(?:与|和|并且|以及)\s*"/g, "] , \"")
+                .trim();
+        }
+
+        function tryParseJsonFromText(text) {
+            const attempts = [];
+            const direct = stripCodeFence(text);
+            if (direct) {
+                attempts.push(direct);
+            }
+
+            const balanced = findBalancedJsonObjectText(text);
+            if (balanced && !attempts.includes(balanced)) {
+                attempts.push(balanced);
+            }
+
+            const repairedDirect = repairJsonLikeText(direct);
+            if (repairedDirect && !attempts.includes(repairedDirect)) {
+                attempts.push(repairedDirect);
+            }
+
+            const repairedBalanced = repairJsonLikeText(balanced);
+            if (repairedBalanced && !attempts.includes(repairedBalanced)) {
+                attempts.push(repairedBalanced);
+            }
+
+            let lastError = null;
+            for (const candidate of attempts) {
+                try {
+                    return JSON.parse(candidate);
+                } catch (error) {
+                    lastError = error;
+                }
+            }
+
+            throw lastError || new Error("未识别到合法 JSON 对象。");
+        }
+
+        function extractJsonCandidate(text) {
+            try {
+                return tryParseJsonFromText(text);
+            } catch (error) {
+                const message = error?.message ? `JSON 解析失败：${error.message}` : "未识别到合法 JSON 对象。";
+                throw new Error(message);
+            }
         }
 
         function normalizeCategory(value, allowedValues) {
@@ -1937,6 +2003,36 @@ ${JSON.stringify(compactDossier, null, 2)}
                 });
             }
 
+            async function requestJsonRepair(invalidOutput, failureMessage) {
+                const repairSystemPrompt = `你是一个 JSON 修复器。你的唯一任务是把已有输出修复成合法 JSON。
+不要补充解释，不要输出 Markdown，不要输出代码块，只输出一个合法 JSON 对象。`;
+
+                const repairPrompt = `下面这段内容原本应该是单 bug 结构化分析 JSON，但当前不合法。
+
+【当前解析错误】
+${failureMessage}
+
+【目标 bug_id】
+${dossier.bug_id}
+
+【合法输出要求】
+- 必须输出一个 JSON 对象
+- bug_id 必须保持为 ${dossier.bug_id}
+- closure_type 只能是 WONTFIX 或 NON-PREPRODUCE
+- 不要添加解释文字
+- 不要改写明显已经存在的信息，只修复格式和局部不合法字段
+
+【待修复原文】
+${String(invalidOutput || "").slice(0, 12000)}`;
+
+                return callModelAPI({
+                    systemPrompt: repairSystemPrompt,
+                    messages: [{ role: "user", content: repairPrompt }],
+                    temperature: 0,
+                    maxTokens: 3200
+                });
+            }
+
             let rawText = await requestAnalysis();
 
             try {
@@ -1949,14 +2045,24 @@ ${JSON.stringify(compactDossier, null, 2)}
 - bug_id 缺失或 closure_type 不合法
 - primary_category 不在候选字典内
 - 知识库条目缺失标题或正文
+- 中间夹带了自然语言或不规范标点
 
 请重新输出一次合法 JSON，不要解释。
+
+【上一次失败原因】
+${firstError.message}
 
 【上一轮原始输出】
 ${rawText.slice(0, 6000)}`;
 
                 rawText = await requestAnalysis(retryInstruction);
-                return validateSingleBugAnalysisJson(extractJsonCandidate(rawText), dossier);
+
+                try {
+                    return validateSingleBugAnalysisJson(extractJsonCandidate(rawText), dossier);
+                } catch (secondError) {
+                    const repairedText = await requestJsonRepair(rawText, secondError.message);
+                    return validateSingleBugAnalysisJson(extractJsonCandidate(repairedText), dossier);
+                }
             }
         }
 
