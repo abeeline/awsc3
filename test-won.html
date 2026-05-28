@@ -1,0 +1,3680 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 低转化 Bug 复盘助手</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #f3efe7;
+            --bg-deep: #ebe2d3;
+            --panel: rgba(255, 252, 247, 0.88);
+            --panel-strong: #fffdf9;
+            --ink: #172033;
+            --muted: #617089;
+            --line: rgba(23, 32, 51, 0.12);
+            --accent: #bb6a3f;
+            --accent-deep: #8e4421;
+            --teal: #0f766e;
+            --teal-soft: rgba(15, 118, 110, 0.12);
+            --warn: #b45309;
+            --warn-soft: rgba(180, 83, 9, 0.11);
+            --danger: #b91c1c;
+            --danger-soft: rgba(185, 28, 28, 0.11);
+            --shadow: 0 24px 60px rgba(23, 32, 51, 0.12);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            color: var(--ink);
+            background:
+                radial-gradient(circle at top left, rgba(187, 106, 63, 0.13), transparent 30%),
+                radial-gradient(circle at top right, rgba(15, 118, 110, 0.12), transparent 28%),
+                linear-gradient(180deg, #f8f3ea 0%, var(--bg) 38%, #f5f0e7 100%);
+            font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+        }
+
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background-image:
+                linear-gradient(rgba(23, 32, 51, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(23, 32, 51, 0.03) 1px, transparent 1px);
+            background-size: 24px 24px;
+            mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.55), transparent 85%);
+        }
+
+        h1,
+        h2,
+        h3,
+        h4,
+        .display-font {
+            font-family: "Manrope", "Noto Sans SC", sans-serif;
+        }
+
+        input,
+        textarea,
+        select,
+        button {
+            font: inherit;
+        }
+
+        .shell {
+            width: min(100%, 1480px);
+            margin: 0 auto;
+            padding: 28px 18px 40px;
+        }
+
+        .page-header {
+            position: relative;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.55);
+            border-radius: 28px;
+            padding: 26px 26px 22px;
+            background:
+                linear-gradient(135deg, rgba(255, 253, 249, 0.95), rgba(248, 242, 233, 0.85)),
+                radial-gradient(circle at right center, rgba(187, 106, 63, 0.18), transparent 42%);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(16px);
+        }
+
+        .page-header::after {
+            content: "";
+            position: absolute;
+            right: -80px;
+            top: -80px;
+            width: 260px;
+            height: 260px;
+            border-radius: 999px;
+            background: radial-gradient(circle, rgba(15, 118, 110, 0.14), transparent 60%);
+        }
+
+        .panel {
+            border: 1px solid rgba(255, 255, 255, 0.58);
+            background: var(--panel);
+            border-radius: 24px;
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(16px);
+        }
+
+        .sub-panel {
+            border-radius: 18px;
+            border: 1px solid var(--line);
+            background: var(--panel-strong);
+        }
+
+        .field-label {
+            display: block;
+            font-size: 0.86rem;
+            font-weight: 700;
+            color: #344256;
+            margin-bottom: 0.45rem;
+        }
+
+        .field-input,
+        .field-select,
+        .field-textarea {
+            width: 100%;
+            border-radius: 16px;
+            border: 1px solid rgba(23, 32, 51, 0.13);
+            background: rgba(255, 255, 255, 0.94);
+            color: var(--ink);
+            padding: 0.85rem 0.95rem;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+        }
+
+        .field-textarea {
+            resize: vertical;
+            min-height: 120px;
+        }
+
+        .field-input:focus,
+        .field-select:focus,
+        .field-textarea:focus {
+            outline: none;
+            border-color: rgba(187, 106, 63, 0.55);
+            box-shadow: 0 0 0 4px rgba(187, 106, 63, 0.14);
+        }
+
+        .muted-copy {
+            color: var(--muted);
+            font-size: 0.85rem;
+            line-height: 1.6;
+        }
+
+        .section-kicker {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.32rem 0.72rem;
+            border-radius: 999px;
+            background: rgba(23, 32, 51, 0.06);
+            color: #364255;
+            font-size: 0.76rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+
+        .section-kicker::before {
+            content: "";
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: var(--accent);
+            box-shadow: 0 0 0 6px rgba(187, 106, 63, 0.14);
+        }
+
+        .accent-chip,
+        .neutral-chip,
+        .soft-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.34rem 0.72rem;
+            border-radius: 999px;
+            font-size: 0.78rem;
+            font-weight: 700;
+        }
+
+        .accent-chip {
+            background: rgba(187, 106, 63, 0.12);
+            color: var(--accent-deep);
+        }
+
+        .neutral-chip {
+            background: rgba(23, 32, 51, 0.07);
+            color: #3c485b;
+        }
+
+        .soft-chip {
+            background: rgba(15, 118, 110, 0.12);
+            color: var(--teal);
+        }
+
+        .scope-option input {
+            position: absolute;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .scope-option span {
+            display: flex;
+            align-items: center;
+            min-height: 54px;
+            padding: 0.85rem 0.9rem;
+            border-radius: 16px;
+            border: 1px solid rgba(23, 32, 51, 0.12);
+            background: rgba(255, 255, 255, 0.92);
+            color: #2f3c50;
+            font-size: 0.93rem;
+            font-weight: 600;
+            transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+        }
+
+        .scope-option input:checked + span {
+            border-color: rgba(187, 106, 63, 0.45);
+            background: rgba(187, 106, 63, 0.1);
+            color: var(--accent-deep);
+        }
+
+        .scope-option:hover span {
+            transform: translateY(-1px);
+        }
+
+        .primary-btn,
+        .secondary-btn,
+        .ghost-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.55rem;
+            border: 0;
+            border-radius: 16px;
+            font-weight: 800;
+            cursor: pointer;
+            transition: transform 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .primary-btn:disabled,
+        .secondary-btn:disabled,
+        .ghost-btn:disabled {
+            opacity: 0.58;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .primary-btn {
+            min-height: 52px;
+            background: linear-gradient(135deg, #172033, #2c374a);
+            color: #ffffff;
+            box-shadow: 0 16px 28px rgba(23, 32, 51, 0.18);
+        }
+
+        .secondary-btn {
+            min-height: 46px;
+            background: linear-gradient(135deg, rgba(187, 106, 63, 0.95), rgba(142, 68, 33, 0.95));
+            color: #ffffff;
+            box-shadow: 0 14px 24px rgba(187, 106, 63, 0.2);
+        }
+
+        .ghost-btn {
+            min-height: 46px;
+            border: 1px solid rgba(23, 32, 51, 0.11);
+            background: rgba(255, 255, 255, 0.86);
+            color: var(--ink);
+        }
+
+        .primary-btn:not(:disabled):hover,
+        .secondary-btn:not(:disabled):hover,
+        .ghost-btn:not(:disabled):hover {
+            transform: translateY(-1px);
+        }
+
+        .status-banner {
+            border-radius: 18px;
+            border: 1px solid var(--line);
+            padding: 0.95rem 1rem;
+            background: rgba(255, 255, 255, 0.8);
+            font-size: 0.9rem;
+            line-height: 1.55;
+        }
+
+        .status-banner.info {
+            border-color: rgba(15, 118, 110, 0.22);
+            background: rgba(15, 118, 110, 0.08);
+            color: var(--teal);
+        }
+
+        .status-banner.warn {
+            border-color: rgba(180, 83, 9, 0.24);
+            background: var(--warn-soft);
+            color: var(--warn);
+        }
+
+        .status-banner.error {
+            border-color: rgba(185, 28, 28, 0.2);
+            background: var(--danger-soft);
+            color: var(--danger);
+        }
+
+        .stat-card {
+            position: relative;
+            overflow: hidden;
+            min-height: 132px;
+            padding: 1.2rem 1.25rem 1.1rem;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            background:
+                linear-gradient(145deg, rgba(255, 253, 249, 0.94), rgba(247, 242, 234, 0.88)),
+                radial-gradient(circle at right top, rgba(187, 106, 63, 0.13), transparent 48%);
+            box-shadow: 0 18px 36px rgba(23, 32, 51, 0.08);
+        }
+
+        .stat-card::after {
+            content: "";
+            position: absolute;
+            right: -22px;
+            bottom: -22px;
+            width: 90px;
+            height: 90px;
+            border-radius: 999px;
+            background: radial-gradient(circle, rgba(15, 118, 110, 0.12), transparent 66%);
+        }
+
+        .tab-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 14px;
+            border: 1px solid rgba(23, 32, 51, 0.1);
+            background: rgba(255, 255, 255, 0.76);
+            color: #334155;
+            min-height: 42px;
+            padding: 0 0.95rem;
+            font-size: 0.9rem;
+            font-weight: 700;
+            transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+        }
+
+        .tab-btn.active {
+            border-color: rgba(187, 106, 63, 0.32);
+            background: rgba(187, 106, 63, 0.11);
+            color: var(--accent-deep);
+        }
+
+        .tab-btn:hover {
+            transform: translateY(-1px);
+        }
+
+        .tab-panel {
+            display: none;
+        }
+
+        .tab-panel.active {
+            display: block;
+            animation: fadeInUp 0.28s ease both;
+        }
+
+        .table-shell {
+            overflow: auto;
+            border-radius: 18px;
+            border: 1px solid rgba(23, 32, 51, 0.1);
+            background: rgba(255, 255, 255, 0.9);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th,
+        td {
+            padding: 0.95rem 1rem;
+            border-bottom: 1px solid rgba(23, 32, 51, 0.08);
+            text-align: left;
+            vertical-align: top;
+            font-size: 0.92rem;
+        }
+
+        th {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            background: rgba(244, 238, 228, 0.96);
+            color: #38455a;
+            font-size: 0.78rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        tr:last-child td {
+            border-bottom: 0;
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            padding: 0.32rem 0.7rem;
+            border-radius: 999px;
+            font-size: 0.78rem;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+
+        .status-pill::before {
+            content: "";
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+        }
+
+        .status-pending {
+            background: rgba(23, 32, 51, 0.08);
+            color: #475569;
+        }
+
+        .status-pending::before {
+            background: #94a3b8;
+        }
+
+        .status-running {
+            background: rgba(15, 118, 110, 0.12);
+            color: var(--teal);
+        }
+
+        .status-running::before {
+            background: var(--teal);
+            box-shadow: 0 0 0 5px rgba(15, 118, 110, 0.12);
+        }
+
+        .status-success {
+            background: rgba(34, 197, 94, 0.12);
+            color: #15803d;
+        }
+
+        .status-success::before {
+            background: #16a34a;
+        }
+
+        .status-warning {
+            background: rgba(245, 158, 11, 0.14);
+            color: #b45309;
+        }
+
+        .status-warning::before {
+            background: #d97706;
+        }
+
+        .status-error {
+            background: rgba(239, 68, 68, 0.12);
+            color: #b91c1c;
+        }
+
+        .status-error::before {
+            background: #dc2626;
+        }
+
+        .empty-box {
+            border: 1px dashed rgba(23, 32, 51, 0.16);
+            border-radius: 18px;
+            padding: 1.25rem;
+            background: rgba(255, 255, 255, 0.58);
+            color: var(--muted);
+        }
+
+        .kb-card {
+            border-radius: 20px;
+            border: 1px solid rgba(23, 32, 51, 0.11);
+            background: rgba(255, 255, 255, 0.94);
+            padding: 1.1rem 1.15rem;
+            box-shadow: 0 14px 24px rgba(23, 32, 51, 0.06);
+        }
+
+        .mono-copy {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.84rem;
+        }
+
+        .summary-list > li + li {
+            margin-top: 0.55rem;
+        }
+
+        .disabled-surface {
+            opacity: 0.72;
+            pointer-events: none;
+        }
+
+        .sticky-stack {
+            position: sticky;
+            top: 16px;
+        }
+
+        .dot-loader span {
+            animation: blink 1.3s infinite both;
+        }
+
+        .dot-loader span:nth-child(2) {
+            animation-delay: 0.15s;
+        }
+
+        .dot-loader span:nth-child(3) {
+            animation-delay: 0.3s;
+        }
+
+        @keyframes blink {
+            0% {
+                opacity: 0.25;
+            }
+            20% {
+                opacity: 1;
+            }
+            100% {
+                opacity: 0.25;
+            }
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @media (max-width: 1279px) {
+            .sticky-stack {
+                position: static;
+            }
+        }
+
+        @media (max-width: 639px) {
+            .shell {
+                padding: 14px 12px 28px;
+            }
+
+            .page-header {
+                padding: 18px 18px 16px;
+            }
+
+            th,
+            td {
+                padding: 0.78rem 0.82rem;
+                font-size: 0.88rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="shell">
+        <header class="page-header">
+            <div class="relative z-10 flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+                <div class="max-w-3xl">
+                    <div class="section-kicker">QA Review Workspace</div>
+                    <h1 class="mt-4 text-3xl font-extrabold tracking-tight text-slate-900 md:text-5xl">AI 低转化 Bug 复盘助手</h1>
+                    <p class="mt-3 max-w-3xl text-sm leading-7 text-slate-600 md:text-base">
+                        把 <span class="font-semibold text-slate-800">WONTFIX / NON-PREPRODUCE</span> 从“结单信息”转换成团队真正能复用的资产：
+                        测试经验、需求澄清点、环境风险、log checklist、用例补强点和后续项目优化池。
+                    </p>
+                </div>
+                <div class="flex flex-wrap gap-2 xl:max-w-md xl:justify-end">
+                    <span class="accent-chip">批量 Bug ID 输入</span>
+                    <span class="soft-chip">单 Bug JSON 结构化分析</span>
+                    <span class="neutral-chip">知识库 / 用例 / Log / Backlog 聚合</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="mt-6 grid gap-6 xl:grid-cols-[392px_minmax(0,1fr)]">
+            <aside class="sticky-stack space-y-6">
+                <section id="config-surface" class="panel p-5 md:p-6">
+                    <div class="flex items-center justify-between gap-4">
+                        <div>
+                            <p class="text-sm font-semibold text-slate-500">输入与配置区</p>
+                            <h2 class="display-font mt-1 text-2xl font-extrabold text-slate-900">批量分析入口</h2>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">MVP</div>
+                            <div class="text-sm font-bold text-slate-700">单页 HTML</div>
+                        </div>
+                    </div>
+
+                    <div class="mt-5 space-y-5">
+                        <div class="sub-panel p-4">
+                            <label class="field-label" for="bug-ids-input">Bug ID 批量输入</label>
+                            <textarea id="bug-ids-input" class="field-textarea" placeholder="12345,12346,12347&#10;12348 12349"></textarea>
+                            <div class="mt-3 flex flex-wrap items-center gap-2">
+                                <span class="neutral-chip">自动去重</span>
+                                <span class="neutral-chip">支持逗号 / 空格 / 换行</span>
+                                <span id="bug-id-meta" class="accent-chip">当前识别 0 个 ID</span>
+                            </div>
+                            <p class="muted-copy mt-3">
+                                前端会做 normalize，避免同一批次重复抓取。建议输入纯 ID，不再依赖单个 Bug 链接。
+                            </p>
+                        </div>
+
+                        <div class="sub-panel p-4">
+                            <h3 class="display-font text-lg font-extrabold text-slate-900">Bugzilla 设置</h3>
+                            <div class="mt-4 space-y-4">
+                                <div>
+                                    <label class="field-label" for="bugzilla-api-base">Bugzilla API Base</label>
+                                    <input id="bugzilla-api-base" class="field-input" type="text" placeholder="例如 https://bugzilla.example.com/rest">
+                                </div>
+                                <div>
+                                    <label class="field-label" for="bugzilla-api-key">Bugzilla API Key</label>
+                                    <input id="bugzilla-api-key" class="field-input" type="password" placeholder="可选，优先用于 REST API 鉴权">
+                                </div>
+                            </div>
+                            <p class="muted-copy mt-3">
+                                维持参考页的 REST API 调用方式，并继续过滤系统账号 <span class="mono-copy">samplecode / itest / cmadmin</span> 的评论。
+                            </p>
+                        </div>
+
+                        <div class="sub-panel p-4">
+                            <h3 class="display-font text-lg font-extrabold text-slate-900">LLM 模型设置</h3>
+                            <div class="mt-4 grid gap-4">
+                                <div>
+                                    <label class="field-label" for="llm-provider">模型类型</label>
+                                    <select id="llm-provider" class="field-select">
+                                        <option value="gemini">Gemini</option>
+                                        <option value="dify">Dify</option>
+                                        <option value="openai">OpenAI-compatible</option>
+                                        <option value="custom">Custom</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="field-label" for="llm-endpoint">LLM API Endpoint</label>
+                                    <input id="llm-endpoint" class="field-input" type="text" placeholder="例如 https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-04-17">
+                                </div>
+                                <div id="model-name-wrapper" class="hidden">
+                                    <label class="field-label" for="model-name">模型名称</label>
+                                    <input id="model-name" class="field-input" type="text" placeholder="例如 gpt-4.1 或自定义模型名">
+                                </div>
+                                <div>
+                                    <label class="field-label" for="llm-api-key">LLM API Key</label>
+                                    <input id="llm-api-key" class="field-input" type="password" placeholder="调用模型时使用">
+                                </div>
+                            </div>
+                            <p id="provider-hint" class="muted-copy mt-3">
+                                Gemini 模式下会自动拼接 <span class="mono-copy">:generateContent?key=</span> 并设置 JSON 输出倾向。
+                            </p>
+                        </div>
+
+                        <div class="sub-panel p-4">
+                            <h3 class="display-font text-lg font-extrabold text-slate-900">分析范围</h3>
+                            <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+                                <label class="scope-option relative cursor-pointer">
+                                    <input class="analysis-scope" type="checkbox" value="WONTFIX 原因细分" checked>
+                                    <span>WONTFIX 原因细分</span>
+                                </label>
+                                <label class="scope-option relative cursor-pointer">
+                                    <input class="analysis-scope" type="checkbox" value="NON-PREPRODUCE 原因细分" checked>
+                                    <span>NON-PREPRODUCE 原因细分</span>
+                                </label>
+                                <label class="scope-option relative cursor-pointer">
+                                    <input class="analysis-scope" type="checkbox" value="测试经验沉淀" checked>
+                                    <span>测试经验沉淀</span>
+                                </label>
+                                <label class="scope-option relative cursor-pointer">
+                                    <input class="analysis-scope" type="checkbox" value="Log / 证据链改进" checked>
+                                    <span>Log / 证据链改进</span>
+                                </label>
+                                <label class="scope-option relative cursor-pointer">
+                                    <input class="analysis-scope" type="checkbox" value="测试用例改进" checked>
+                                    <span>测试用例改进</span>
+                                </label>
+                                <label class="scope-option relative cursor-pointer">
+                                    <input class="analysis-scope" type="checkbox" value="后续项目优化项" checked>
+                                    <span>后续项目优化项</span>
+                                </label>
+                                <label class="scope-option relative cursor-pointer">
+                                    <input class="analysis-scope" type="checkbox" value="环境 / 网络 / 配置风险" checked>
+                                    <span>环境 / 网络 / 配置风险</span>
+                                </label>
+                                <label class="scope-option relative cursor-pointer">
+                                    <input class="analysis-scope" type="checkbox" value="测试人员理解偏差" checked>
+                                    <span>测试人员理解偏差</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="grid gap-3">
+                            <button id="start-analysis-btn" class="primary-btn px-4">
+                                <span>开始批量分析</span>
+                                <span id="run-loader" class="dot-loader hidden"><span>.</span><span>.</span><span>.</span></span>
+                            </button>
+                            <div class="grid gap-3 sm:grid-cols-2">
+                                <button id="reset-btn" class="ghost-btn px-4" type="button">清空结果</button>
+                                <button id="load-sample-btn" class="secondary-btn px-4" type="button">填充示例</button>
+                            </div>
+                        </div>
+
+                        <div id="runtime-hint" class="status-banner info">
+                            就绪。输入 Bug ID、配置 Bugzilla 与模型参数后，即可按“抓取基础信息 → 构造 Bug Dossier → 单 bug JSON 分析 → 汇总聚合”完整跑通。
+                        </div>
+                    </div>
+                </section>
+            </aside>
+
+            <section class="space-y-6">
+                <section class="panel p-5 md:p-6">
+                    <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                        <div>
+                            <p class="text-sm font-semibold text-slate-500">执行状态</p>
+                            <h2 class="display-font mt-1 text-2xl font-extrabold text-slate-900">批量抓取状态区</h2>
+                            <p class="muted-copy mt-2">这里不展开源 bug 全量数据，只保留抓取进度、Resolution、Component 和一句摘要。</p>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <span id="fetch-progress-chip" class="neutral-chip">抓取 0 / 0</span>
+                            <span id="analysis-progress-chip" class="accent-chip">分析 0 / 0</span>
+                            <span id="current-bug-chip" class="soft-chip">当前对象 -</span>
+                        </div>
+                    </div>
+                    <div id="error-banner-area" class="mt-4 space-y-3"></div>
+                    <div id="fetch-status-container" class="mt-5"></div>
+                </section>
+
+                <section class="panel p-5 md:p-6">
+                    <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                        <div>
+                            <p class="text-sm font-semibold text-slate-500">结构化分析</p>
+                            <h2 class="display-font mt-1 text-2xl font-extrabold text-slate-900">AI 分析进度区</h2>
+                            <p class="muted-copy mt-2">每个 bug 单独产出 JSON，校验失败时会尝试提取 JSON block，并自动重试一次。</p>
+                        </div>
+                        <div id="analysis-stage-hint" class="status-banner info max-w-xl">
+                            当前还没有启动分析。开始执行后，这里会逐条展示“已完成 / 跳过 / 失败”等状态。
+                        </div>
+                    </div>
+                    <div id="analysis-progress-container" class="mt-5"></div>
+                </section>
+
+                <section class="panel p-5 md:p-6">
+                    <div class="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+                        <div>
+                            <p class="text-sm font-semibold text-slate-500">最终汇总区</p>
+                            <h2 class="display-font mt-1 text-2xl font-extrabold text-slate-900">团队沉淀与行动输出</h2>
+                            <p class="muted-copy mt-2">汇总页只展示关键分析结论，不展示原始 description 或评论全文。</p>
+                        </div>
+                        <div class="grid gap-3 sm:grid-cols-3 xl:min-w-[520px]">
+                            <button id="download-html-btn" class="ghost-btn px-4" type="button" disabled>下载 HTML</button>
+                            <button id="download-json-btn" class="ghost-btn px-4" type="button" disabled>下载 JSON</button>
+                            <button id="download-csv-btn" class="ghost-btn px-4" type="button" disabled>下载知识库 CSV</button>
+                        </div>
+                    </div>
+
+                    <div id="summary-root" class="mt-6">
+                        <div class="empty-box">
+                            批量分析完成后，这里会生成 Dashboard、Bug 结论表、知识库沉淀、用例改进、Log 改进、后续项目优化池、环境风险库和 Action Items。
+                        </div>
+                    </div>
+                </section>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        const WONTFIX_PRIMARY_CATEGORIES = [
+            "产品设计如此",
+            "协议/规范允许",
+            "当前实现限制",
+            "性能边界限制",
+            "项目优先级低",
+            "外部网络/运营商问题",
+            "实验室环境/配置问题",
+            "测试理解偏差",
+            "已知问题重复变体",
+            "客户/项目策略不修",
+            "信息不足无法判断"
+        ];
+
+        const NON_REPRO_PRIMARY_CATEGORIES = [
+            "偶现但现象可信",
+            "偶现且 log 不足",
+            "网络环境瞬态问题",
+            "实验室环境不稳定",
+            "测试步骤不完整",
+            "复现路径不稳定",
+            "设备一次性异常",
+            "版本切换后消失",
+            "疑似重复但未合并",
+            "测试观察误差",
+            "信息不足无法判断"
+        ];
+
+        const NON_REPRO_RISK_LEVELS = [
+            "NPR-L1 高风险偶现",
+            "NPR-L2 中风险偶现",
+            "NPR-L3 低风险偶现",
+            "NPR-L4 明确误报"
+        ];
+
+        const TARGET_CLOSURE_TYPES = ["WONTFIX", "NON-PREPRODUCE"];
+        const EXCLUDED_COMMENT_AUTHORS = ["samplecode", "itest", "cmadmin"];
+        const STORAGE_KEY = "ai-low-conversion-bug-review-config-v1";
+
+        const refs = {
+            configSurface: document.getElementById("config-surface"),
+            bugIdsInput: document.getElementById("bug-ids-input"),
+            bugIdMeta: document.getElementById("bug-id-meta"),
+            bugzillaApiBase: document.getElementById("bugzilla-api-base"),
+            bugzillaApiKey: document.getElementById("bugzilla-api-key"),
+            llmProvider: document.getElementById("llm-provider"),
+            llmEndpoint: document.getElementById("llm-endpoint"),
+            modelNameWrapper: document.getElementById("model-name-wrapper"),
+            modelName: document.getElementById("model-name"),
+            llmApiKey: document.getElementById("llm-api-key"),
+            providerHint: document.getElementById("provider-hint"),
+            startAnalysisBtn: document.getElementById("start-analysis-btn"),
+            resetBtn: document.getElementById("reset-btn"),
+            loadSampleBtn: document.getElementById("load-sample-btn"),
+            runtimeHint: document.getElementById("runtime-hint"),
+            runLoader: document.getElementById("run-loader"),
+            fetchProgressChip: document.getElementById("fetch-progress-chip"),
+            analysisProgressChip: document.getElementById("analysis-progress-chip"),
+            currentBugChip: document.getElementById("current-bug-chip"),
+            errorBannerArea: document.getElementById("error-banner-area"),
+            fetchStatusContainer: document.getElementById("fetch-status-container"),
+            analysisProgressContainer: document.getElementById("analysis-progress-container"),
+            analysisStageHint: document.getElementById("analysis-stage-hint"),
+            summaryRoot: document.getElementById("summary-root"),
+            downloadHtmlBtn: document.getElementById("download-html-btn"),
+            downloadJsonBtn: document.getElementById("download-json-btn"),
+            downloadCsvBtn: document.getElementById("download-csv-btn")
+        };
+
+        function createInitialState() {
+            return {
+                config: {
+                    bugzillaApiBase: "",
+                    bugzillaApiKey: "",
+                    llmProvider: "gemini",
+                    llmEndpoint: "",
+                    llmApiKey: "",
+                    modelName: "",
+                    analysisScopes: []
+                },
+                input: {
+                    bugIdsRaw: "",
+                    bugIds: []
+                },
+                bugFetchResults: {},
+                bugAnalysisResults: {},
+                aggregateReport: null,
+                ui: {
+                    isFetching: false,
+                    isAnalyzing: false,
+                    currentBugId: null,
+                    errors: [],
+                    activeTab: "dashboard"
+                }
+            };
+        }
+
+        let appState = createInitialState();
+
+        function escapeHtml(value) {
+            return String(value ?? "")
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#39;");
+        }
+
+        function normalizeWhitespace(text) {
+            return String(text ?? "")
+                .replace(/\u00A0/g, " ")
+                .replace(/\r/g, "")
+                .replace(/[ \t]+/g, " ")
+                .replace(/\n{3,}/g, "\n\n")
+                .trim();
+        }
+
+        function cleanText(text) {
+            return normalizeWhitespace(String(text ?? "").replace(/\s+\n/g, "\n"));
+        }
+
+        function normalizeFieldLookupKey(label) {
+            return cleanText(label)
+                .toLowerCase()
+                .replace(/[：:()[\]{}<>]/g, "")
+                .replace(/[\s_\-/.]+/g, "");
+        }
+
+        function normalizeBugzillaFieldLabel(label) {
+            return cleanText(label)
+                .replace(/[：:]+$/, "")
+                .toLowerCase();
+        }
+
+        function summarizeText(text, maxLength = 86) {
+            const normalized = cleanText(text);
+            if (!normalized) return "";
+            if (normalized.length <= maxLength) return normalized;
+            return `${normalized.slice(0, maxLength).trim()}...`;
+        }
+
+        function trimLongText(text, maxLength = 1800) {
+            const normalized = cleanText(text);
+            if (!normalized) return "";
+            if (normalized.length <= maxLength) return normalized;
+            return `${normalized.slice(0, maxLength).trim()}...`;
+        }
+
+        function uniqueList(items) {
+            return Array.from(new Set((items || []).map((item) => cleanText(item)).filter(Boolean)));
+        }
+
+        function formatFieldValue(value) {
+            if (Array.isArray(value)) {
+                return value.map((item) => formatFieldValue(item)).filter(Boolean).join("、");
+            }
+            if (value && typeof value === "object") {
+                if ("name" in value) return cleanText(value.name);
+                if ("value" in value) return cleanText(value.value);
+                return cleanText(JSON.stringify(value));
+            }
+            return cleanText(String(value ?? ""));
+        }
+
+        function normalizeBoolean(value, fallback = false) {
+            if (typeof value === "boolean") return value;
+            if (typeof value === "number") return value !== 0;
+            const normalized = cleanText(value).toLowerCase();
+            if (["true", "yes", "1", "是", "y"].includes(normalized)) return true;
+            if (["false", "no", "0", "否", "n", ""].includes(normalized)) return false;
+            return fallback;
+        }
+
+        function normalizeNumber(value, fallback = 0.5) {
+            const parsed = Number(value);
+            if (!Number.isFinite(parsed)) return fallback;
+            return Math.min(1, Math.max(0, parsed));
+        }
+
+        function normalizeStringArray(value) {
+            if (Array.isArray(value)) {
+                return uniqueList(value.map((item) => cleanText(item)));
+            }
+            if (typeof value === "string") {
+                return uniqueList(value.split(/[、,，;\n]/).map((item) => cleanText(item)));
+            }
+            return [];
+        }
+
+        function joinUrl(base, path) {
+            return `${String(base || "").replace(/\/$/, "")}/${String(path || "").replace(/^\//, "")}`;
+        }
+
+        function parseBugIds(input) {
+            return String(input ?? "")
+                .split(/[,\n，\s]+/)
+                .map((x) => x.trim())
+                .filter(Boolean)
+                .filter((x, index, arr) => arr.indexOf(x) === index);
+        }
+
+        function normalizeBugzillaApiBase(rawBase) {
+            const trimmed = String(rawBase || "").trim().replace(/\/$/, "");
+            if (!trimmed) return "";
+            const directRestMatch = trimmed.match(/^(https?:\/\/.+?\/rest(?:\.cgi)?)(?:\/.*)?$/i);
+            if (directRestMatch) {
+                return directRestMatch[1];
+            }
+            return `${trimmed}/rest`;
+        }
+
+        function deriveBugzillaSiteBase(apiBase) {
+            return normalizeBugzillaApiBase(apiBase).replace(/\/rest(?:\.cgi)?$/i, "");
+        }
+
+        function normalizeCommentAuthorKey(author) {
+            const compact = cleanText(author).toLowerCase().replace(/\s+/g, "");
+            return compact.split(/[(@<]/)[0];
+        }
+
+        function filterSystemComments(comments) {
+            return (comments || []).filter((comment) => {
+                const authorKey = normalizeCommentAuthorKey(comment?.author || "");
+                return !EXCLUDED_COMMENT_AUTHORS.includes(authorKey);
+            });
+        }
+
+        function findFieldValueByAliases(fieldMap, aliases) {
+            const entries = Object.entries(fieldMap || {});
+            if (!entries.length) return "";
+            const normalizedAliases = aliases.map(normalizeFieldLookupKey);
+
+            for (const alias of normalizedAliases) {
+                const exactMatch = entries.find(([key, value]) => normalizeFieldLookupKey(key) === alias && cleanText(value));
+                if (exactMatch) {
+                    return cleanText(exactMatch[1]);
+                }
+            }
+
+            for (const alias of normalizedAliases) {
+                const fuzzyMatch = entries.find(([key, value]) => normalizeFieldLookupKey(key).includes(alias) && cleanText(value));
+                if (fuzzyMatch) {
+                    return cleanText(fuzzyMatch[1]);
+                }
+            }
+
+            return "";
+        }
+
+        function parseBracketedSections(text) {
+            const normalizedText = cleanText(text);
+            if (!normalizedText) return {};
+
+            const sectionRegex = /\[\s*(?:\d+\.)?\s*([^\]]+?)\s*\]\s*[:：]\s*/gi;
+            const matches = Array.from(normalizedText.matchAll(sectionRegex));
+            if (!matches.length) return {};
+
+            const sections = {};
+            matches.forEach((match, index) => {
+                const title = cleanText(match[1]);
+                const start = match.index + match[0].length;
+                const end = index + 1 < matches.length ? matches[index + 1].index : normalizedText.length;
+                const content = cleanText(normalizedText.slice(start, end));
+                if (title && content) {
+                    sections[normalizeFieldLookupKey(title)] = content;
+                }
+            });
+            return sections;
+        }
+
+        function parseOrderedAnalysisSolutionSections(text) {
+            const normalizedText = cleanText(text);
+            if (!normalizedText) return {};
+
+            const markers = [
+                { key: "rootcause", patterns: [/\[\s*1\s*\.?\s*root\s*cause[^\]]*\]\s*[:：]\s*/i, /\[\s*1\s*\.?\s*rootcause[^\]]*\]\s*[:：]\s*/i] },
+                { key: "resolution", patterns: [/\[\s*2\s*\.?\s*resolution[^\]]*\]\s*[:：]\s*/i] },
+                { key: "testingsuggestion", patterns: [/\[\s*3\s*\.?\s*testing\s*suggestion[^\]]*\]\s*[:：]\s*/i, /\[\s*3\s*\.?\s*test\s*suggestion[^\]]*\]\s*[:：]\s*/i] }
+            ];
+
+            const locatedMarkers = markers
+                .map((marker) => {
+                    let bestMatch = null;
+                    marker.patterns.forEach((pattern) => {
+                        const match = pattern.exec(normalizedText);
+                        if (match && (!bestMatch || match.index < bestMatch.index)) {
+                            bestMatch = match;
+                        }
+                    });
+                    if (!bestMatch) return null;
+                    return {
+                        key: marker.key,
+                        index: bestMatch.index,
+                        endIndex: bestMatch.index + bestMatch[0].length
+                    };
+                })
+                .filter(Boolean)
+                .sort((a, b) => a.index - b.index);
+
+            if (!locatedMarkers.length) return {};
+
+            const sections = {};
+            locatedMarkers.forEach((marker, index) => {
+                const endIndex = index + 1 < locatedMarkers.length ? locatedMarkers[index + 1].index : normalizedText.length;
+                const content = cleanText(normalizedText.slice(marker.endIndex, endIndex));
+                if (content) {
+                    sections[marker.key] = content;
+                }
+            });
+            return sections;
+        }
+
+        function getCompositeSectionValue(sections, aliases) {
+            const entries = Object.entries(sections || {});
+            if (!entries.length) return "";
+            const normalizedAliases = aliases.map(normalizeFieldLookupKey);
+
+            for (const alias of normalizedAliases) {
+                const exactMatch = entries.find(([key, value]) => key === alias && cleanText(value));
+                if (exactMatch) {
+                    return cleanText(exactMatch[1]);
+                }
+            }
+
+            for (const alias of normalizedAliases) {
+                const fuzzyMatch = entries.find(([key, value]) => key.includes(alias) && cleanText(value));
+                if (fuzzyMatch) {
+                    return cleanText(fuzzyMatch[1]);
+                }
+            }
+
+            return "";
+        }
+
+        function findImportantBugFields(fieldMap) {
+            const directRootCause = findFieldValueByAliases(fieldMap, [
+                "root cause",
+                "rootcause",
+                "root_cause",
+                "cf_root_cause",
+                "cf_rootcause",
+                "根因"
+            ]);
+
+            const directAnalysisSolution = findFieldValueByAliases(fieldMap, [
+                "analysis_solution",
+                "analysis solution",
+                "analysissolution",
+                "cf_analysis_solution",
+                "cfanalysissolution",
+                "resolution detail",
+                "solution detail",
+                "fix solution",
+                "解决方案"
+            ]);
+
+            const directTestSuggestion = findFieldValueByAliases(fieldMap, [
+                "test suggestion",
+                "testsuggestion",
+                "test_suggestion",
+                "cf_test_suggestion",
+                "testing suggestion",
+                "测试建议",
+                "回归建议"
+            ]);
+
+            const compositeSections = {
+                ...parseBracketedSections(directAnalysisSolution),
+                ...parseOrderedAnalysisSolutionSections(directAnalysisSolution)
+            };
+
+            return {
+                rootCause: getCompositeSectionValue(compositeSections, ["root cause", "rootcause", "根因"]) || directRootCause,
+                analysisSolution: getCompositeSectionValue(compositeSections, ["resolution", "solution", "解决方案"]) || directAnalysisSolution,
+                testSuggestion: getCompositeSectionValue(compositeSections, ["testing suggestion", "test suggestion", "testsuggestion", "测试建议"]) || directTestSuggestion
+            };
+        }
+
+        function buildCompactRawFields(fieldMap) {
+            const preferredKeys = [
+                "product",
+                "component",
+                "version",
+                "target_milestone",
+                "priority",
+                "severity",
+                "platform",
+                "op_sys",
+                "keywords",
+                "whiteboard",
+                "cf_root_cause",
+                "cf_analysis_solution",
+                "cf_test_suggestion",
+                "module",
+                "sub_module",
+                "rat",
+                "network",
+                "operator",
+                "scenario",
+                "build",
+                "lab",
+                "project"
+            ];
+
+            const compact = {};
+            preferredKeys.forEach((key) => {
+                if (fieldMap[key]) {
+                    compact[key] = cleanText(fieldMap[key]);
+                }
+            });
+
+            Object.entries(fieldMap || {}).forEach(([key, value]) => {
+                if (Object.keys(compact).length >= 36) return;
+                const normalizedKey = key.toLowerCase();
+                if (
+                    compact[key]
+                    || !cleanText(value)
+                    || normalizedKey.includes("comment")
+                    || normalizedKey.includes("description")
+                    || normalizedKey.includes("history")
+                ) {
+                    return;
+                }
+                if (
+                    normalizedKey.startsWith("cf_")
+                    || normalizedKey.includes("module")
+                    || normalizedKey.includes("rat")
+                    || normalizedKey.includes("network")
+                    || normalizedKey.includes("operator")
+                    || normalizedKey.includes("scenario")
+                    || normalizedKey.includes("project")
+                ) {
+                    compact[key] = cleanText(value);
+                }
+            });
+
+            return compact;
+        }
+
+        function normalizeRestComments(comments) {
+            return filterSystemComments(
+                (comments || [])
+                    .map((comment) => ({
+                        author: cleanText(comment.creator || comment.author || ""),
+                        time: cleanText(comment.time || comment.creation_time || ""),
+                        text: trimLongText(comment.text || comment.body || "", 3200)
+                    }))
+                    .filter((comment) => comment.text)
+            );
+        }
+
+        function buildAttachmentSummary(attachmentsPayload, bugId) {
+            const bugKey = String(bugId || "");
+            const candidates = [
+                attachmentsPayload?.bugs?.[bugKey],
+                attachmentsPayload?.bugs?.[Number(bugKey)],
+                attachmentsPayload?.attachments,
+                attachmentsPayload?.bugs
+            ];
+
+            let attachments = [];
+            candidates.forEach((candidate) => {
+                if (attachments.length) return;
+                if (Array.isArray(candidate)) {
+                    attachments = candidate;
+                    return;
+                }
+                if (candidate && typeof candidate === "object") {
+                    const values = Object.values(candidate);
+                    if (values.length && values.every((item) => item && typeof item === "object")) {
+                        attachments = values;
+                    }
+                }
+            });
+
+            return (attachments || [])
+                .map((attachment) => ({
+                    id: String(attachment.id || ""),
+                    file_name: cleanText(attachment.file_name || attachment.name || attachment.summary || ""),
+                    summary: cleanText(attachment.summary || attachment.description || ""),
+                    content_type: cleanText(attachment.content_type || attachment.type || ""),
+                    is_patch: normalizeBoolean(attachment.is_patch, false),
+                    is_obsolete: normalizeBoolean(attachment.is_obsolete, false)
+                }))
+                .filter((attachment) => attachment.file_name || attachment.summary)
+                .slice(0, 10);
+        }
+
+        function buildBugDossier(bugPayload, commentsPayload, attachmentsPayload) {
+            const bug = bugPayload?.bugs?.[0];
+            if (!bug) {
+                throw new Error("Bugzilla 返回中未找到 bug 数据。");
+            }
+
+            const fieldMap = {};
+            Object.entries(bug).forEach(([key, value]) => {
+                const formatted = formatFieldValue(value);
+                if (formatted) {
+                    fieldMap[key] = formatted;
+                }
+            });
+
+            const importantFields = findImportantBugFields(fieldMap);
+            const allComments = normalizeRestComments(
+                commentsPayload?.bugs?.[String(bug.id)]?.comments
+                || commentsPayload?.bugs?.[bug.id]?.comments
+                || []
+            );
+
+            let description = cleanText(fieldMap.description || bug.description || "");
+            if (!description && allComments.length) {
+                description = cleanText(allComments[0].text);
+            }
+
+            let comments = allComments.slice();
+            if (description && comments.length && cleanText(comments[0].text) === description) {
+                comments = comments.slice(1);
+            }
+
+            return {
+                bug_id: String(bug.id || ""),
+                summary: cleanText(bug.summary || bug.short_desc || ""),
+                status: cleanText(bug.status || bug.bug_status || ""),
+                resolution: cleanText(bug.resolution || ""),
+                severity: cleanText(bug.severity || bug.bug_severity || ""),
+                priority: cleanText(bug.priority || ""),
+                product: cleanText(formatFieldValue(bug.product || "")),
+                component: cleanText(formatFieldValue(bug.component || "")),
+                version: cleanText(formatFieldValue(bug.version || "")),
+                target_milestone: cleanText(formatFieldValue(bug.target_milestone || "")),
+                creator: cleanText(formatFieldValue(bug.creator_detail?.real_name || bug.creator || "")),
+                assigned_to: cleanText(formatFieldValue(bug.assigned_to_detail?.real_name || bug.assigned_to || "")),
+                creation_time: cleanText(bug.creation_time || ""),
+                last_change_time: cleanText(bug.last_change_time || ""),
+                cf_root_cause: cleanText(importantFields.rootCause || ""),
+                cf_analysis_solution: cleanText(importantFields.analysisSolution || ""),
+                cf_test_suggestion: cleanText(importantFields.testSuggestion || ""),
+                description: trimLongText(description, 2600),
+                comments: comments.map((comment) => ({
+                    author: comment.author,
+                    time: comment.time,
+                    text: trimLongText(comment.text, 2200)
+                })),
+                attachments_summary: buildAttachmentSummary(attachmentsPayload, bug.id),
+                raw_fields_compact: buildCompactRawFields(fieldMap),
+                view_url: `${deriveBugzillaSiteBase(appState.config.bugzillaApiBase)}/show_bug.cgi?id=${encodeURIComponent(String(bug.id || ""))}`
+            };
+        }
+
+        function sliceCommentsForLlm(comments) {
+            if (!comments.length) return [];
+            if (comments.length <= 8) return comments;
+            return [...comments.slice(0, 3), ...comments.slice(-5)];
+        }
+
+        function compactBugDossierForLLM(dossier) {
+            return {
+                bug_id: dossier.bug_id,
+                summary: dossier.summary,
+                status: dossier.status,
+                resolution: dossier.resolution,
+                severity: dossier.severity,
+                priority: dossier.priority,
+                product: dossier.product,
+                component: dossier.component,
+                version: dossier.version,
+                target_milestone: dossier.target_milestone,
+                creator: dossier.creator,
+                assigned_to: dossier.assigned_to,
+                creation_time: dossier.creation_time,
+                last_change_time: dossier.last_change_time,
+                cf_root_cause: dossier.cf_root_cause,
+                cf_analysis_solution: dossier.cf_analysis_solution,
+                cf_test_suggestion: dossier.cf_test_suggestion,
+                description: trimLongText(dossier.description, 2200),
+                comments: sliceCommentsForLlm(dossier.comments || []).map((comment) => ({
+                    author: comment.author,
+                    time: comment.time,
+                    text: trimLongText(comment.text, 1200)
+                })),
+                attachments_summary: (dossier.attachments_summary || []).slice(0, 8),
+                raw_fields_compact: dossier.raw_fields_compact || {}
+            };
+        }
+
+        function normalizeClosureType(...values) {
+            const merged = values
+                .map((value) => cleanText(value))
+                .filter(Boolean)
+                .join(" ")
+                .toUpperCase()
+                .replace(/_/g, "-")
+                .replace(/\s+/g, "");
+
+            if (merged.includes("WONTFIX")) return "WONTFIX";
+
+            const nprPatterns = [
+                "NON-PREPRODUCE",
+                "NONREPRODUCE",
+                "NON-PREPRODUCIBLE",
+                "NONREPRODUCIBLE",
+                "NOTREPRODUCIBLE",
+                "NOREPRODUCE",
+                "NOREPRO",
+                "CANNOTREPRODUCE",
+                "UNABLETOREPRODUCE",
+                "WORKSFORME",
+                "NON-REPRO"
+            ];
+
+            if (nprPatterns.some((pattern) => merged.includes(pattern))) {
+                return "NON-PREPRODUCE";
+            }
+
+            return "";
+        }
+
+        function isTargetClosureType(closureType) {
+            return TARGET_CLOSURE_TYPES.includes(closureType);
+        }
+
+        function normalizeJsonCandidateText(text) {
+            return String(text ?? "")
+                .replace(/^\uFEFF/, "")
+                .replace(/```json/gi, "```")
+                .replace(/```javascript/gi, "```")
+                .replace(/```js/gi, "```")
+                .replace(/[“”]/g, "\"")
+                .replace(/[‘’]/g, "'")
+                .replace(/\r/g, "")
+                .trim();
+        }
+
+        function stripCodeFence(text) {
+            const normalized = normalizeJsonCandidateText(text);
+            return normalized.startsWith("```") && normalized.endsWith("```")
+                ? normalized.replace(/^```/i, "").replace(/```$/i, "").trim()
+                : normalized;
+        }
+
+        function findBalancedJsonObjectText(text) {
+            const direct = stripCodeFence(text);
+            let start = direct.indexOf("{");
+
+            while (start !== -1) {
+                let depth = 0;
+                let inString = false;
+                let escaped = false;
+
+                for (let index = start; index < direct.length; index += 1) {
+                    const char = direct[index];
+                    if (inString) {
+                        if (escaped) {
+                            escaped = false;
+                        } else if (char === "\\") {
+                            escaped = true;
+                        } else if (char === "\"") {
+                            inString = false;
+                        }
+                    } else if (char === "\"") {
+                        inString = true;
+                    } else if (char === "{") {
+                        depth += 1;
+                    } else if (char === "}") {
+                        depth -= 1;
+                        if (depth === 0) {
+                            return direct.slice(start, index + 1);
+                        }
+                    }
+                }
+
+                start = direct.indexOf("{", start + 1);
+            }
+
+            return "";
+        }
+
+        function repairJsonLikeText(text) {
+            return String(text ?? "")
+                .replace(/^\uFEFF/, "")
+                .replace(/[“”]/g, "\"")
+                .replace(/[‘’]/g, "'")
+                .replace(/,\s*([}\]])/g, "$1")
+                .replace(/:\s*undefined\b/g, ": null")
+                .replace(/:\s*NaN\b/g, ": null")
+                .replace(/:\s*Infinity\b/g, ": null")
+                .replace(/}\s*[，,]?\s*(?:与|和|并且|以及)\s*"/g, " , \"")
+                .replace(/"\s*(?:与|和|并且|以及)\s*"/g, "\", \"")
+                .replace(/]\s*[，,]?\s*(?:与|和|并且|以及)\s*"/g, "] , \"")
+                .trim();
+        }
+
+        function tryParseJsonFromText(text) {
+            const attempts = [];
+            const direct = stripCodeFence(text);
+            if (direct) {
+                attempts.push(direct);
+            }
+
+            const balanced = findBalancedJsonObjectText(text);
+            if (balanced && !attempts.includes(balanced)) {
+                attempts.push(balanced);
+            }
+
+            const repairedDirect = repairJsonLikeText(direct);
+            if (repairedDirect && !attempts.includes(repairedDirect)) {
+                attempts.push(repairedDirect);
+            }
+
+            const repairedBalanced = repairJsonLikeText(balanced);
+            if (repairedBalanced && !attempts.includes(repairedBalanced)) {
+                attempts.push(repairedBalanced);
+            }
+
+            let lastError = null;
+            for (const candidate of attempts) {
+                try {
+                    return JSON.parse(candidate);
+                } catch (error) {
+                    lastError = error;
+                }
+            }
+
+            throw lastError || new Error("未识别到合法 JSON 对象。");
+        }
+
+        function extractJsonCandidate(text) {
+            try {
+                return tryParseJsonFromText(text);
+            } catch (error) {
+                const message = error?.message ? `JSON 解析失败：${error.message}` : "未识别到合法 JSON 对象。";
+                throw new Error(message);
+            }
+        }
+
+        function normalizeCategory(value, allowedValues) {
+            const text = cleanText(value);
+            if (!text) return "信息不足无法判断";
+            if (allowedValues.includes(text)) return text;
+            const normalized = normalizeFieldLookupKey(text);
+            const matched = allowedValues.find((item) => {
+                const normalizedItem = normalizeFieldLookupKey(item);
+                return normalizedItem === normalized || normalizedItem.includes(normalized) || normalized.includes(normalizedItem);
+            });
+            return matched || "信息不足无法判断";
+        }
+
+        function normalizeRiskLevel(value, closureType) {
+            const text = cleanText(value);
+            if (closureType === "NON-PREPRODUCE") {
+                if (NON_REPRO_RISK_LEVELS.includes(text)) return text;
+                const normalized = normalizeFieldLookupKey(text);
+                if (normalized.includes("nprl1") || normalized.includes("高风险")) return "NPR-L1 高风险偶现";
+                if (normalized.includes("nprl2") || normalized.includes("中风险")) return "NPR-L2 中风险偶现";
+                if (normalized.includes("nprl4") || normalized.includes("误报")) return "NPR-L4 明确误报";
+                return "NPR-L3 低风险偶现";
+            }
+
+            if (["High", "Medium", "Low"].includes(text)) return text;
+            const normalized = normalizeFieldLookupKey(text);
+            if (normalized.includes("high") || normalized.includes("高")) return "High";
+            if (normalized.includes("low") || normalized.includes("低")) return "Low";
+            return "Medium";
+        }
+
+        function normalizeLearningSection(rawValue, fallbackConclusion) {
+            const learning = rawValue || {};
+            return {
+                lesson_title: cleanText(learning.lesson_title || learning.title || "测试经验待沉淀"),
+                lesson_detail: cleanText(learning.lesson_detail || learning.detail || fallbackConclusion || ""),
+                applicable_scenarios: normalizeStringArray(learning.applicable_scenarios || learning.scenarios || []),
+                anti_pattern: cleanText(learning.anti_pattern || learning.risk_pattern || "")
+            };
+        }
+
+        function normalizeTestcaseImprovement(rawValue) {
+            const data = rawValue || {};
+            return {
+                need_update: normalizeBoolean(data.need_update, false),
+                suggested_change: cleanText(data.suggested_change || data.change || ""),
+                new_test_points: normalizeStringArray(data.new_test_points || data.test_points || [])
+            };
+        }
+
+        function normalizeLogImprovement(rawValue) {
+            const data = rawValue || {};
+            return {
+                need_update: normalizeBoolean(data.need_update, false),
+                missing_evidence: normalizeStringArray(data.missing_evidence || []),
+                required_logs: normalizeStringArray(data.required_logs || data.logs || []),
+                trigger_snapshot: normalizeStringArray(data.trigger_snapshot || data.snapshots || [])
+            };
+        }
+
+        function normalizeFutureBacklog(rawValue) {
+            const data = rawValue || {};
+            return {
+                should_create: normalizeBoolean(data.should_create, false),
+                title: cleanText(data.title || ""),
+                reason: cleanText(data.reason || ""),
+                priority: cleanText(data.priority || "P2")
+            };
+        }
+
+        function normalizeKnowledgeBaseEntry(rawValue, learningSection, moduleName, fallbackConclusion) {
+            const entry = rawValue || {};
+            const fallbackTitle = cleanText(entry.title || learningSection.lesson_title || `${moduleName || "通用模块"}经验沉淀`);
+            return {
+                type: cleanText(entry.type || "测试经验"),
+                title: fallbackTitle,
+                content: cleanText(entry.content || learningSection.lesson_detail || fallbackConclusion || ""),
+                tags: uniqueList([...(normalizeStringArray(entry.tags || [])), moduleName].filter(Boolean))
+            };
+        }
+
+        function normalizeActionItems(items) {
+            if (!Array.isArray(items)) return [];
+            return items
+                .map((item) => ({
+                    type: cleanText(item?.type || "行动项"),
+                    owner: cleanText(item?.owner || "待指定"),
+                    action: cleanText(item?.action || "")
+                }))
+                .filter((item) => item.action);
+        }
+
+        function validateSingleBugAnalysisJson(json, dossier) {
+            if (!json || typeof json !== "object" || Array.isArray(json)) {
+                throw new Error("LLM 输出不是 JSON 对象。");
+            }
+
+            const closureType = normalizeClosureType(json.closure_type, dossier.resolution, dossier.status);
+            if (!isTargetClosureType(closureType)) {
+                throw new Error("LLM 未返回受支持的 closure_type。");
+            }
+
+            const allowedCategories = closureType === "WONTFIX" ? WONTFIX_PRIMARY_CATEGORIES : NON_REPRO_PRIMARY_CATEGORIES;
+            const oneSentenceConclusion = cleanText(json.one_sentence_conclusion || json.conclusion || "");
+            const learningSection = normalizeLearningSection(json.test_team_learning, oneSentenceConclusion);
+            const testcaseImprovement = normalizeTestcaseImprovement(json.testcase_improvement);
+            const logImprovement = normalizeLogImprovement(json.log_evidence_improvement);
+            const futureBacklog = normalizeFutureBacklog(json.future_project_backlog);
+            const knowledgeBaseEntry = normalizeKnowledgeBaseEntry(json.knowledge_base_entry, learningSection, cleanText(json.module || dossier.component || ""), oneSentenceConclusion);
+            const actionItems = normalizeActionItems(json.action_items);
+
+            const normalized = {
+                bug_id: cleanText(json.bug_id || dossier.bug_id || ""),
+                closure_type: closureType,
+                primary_category: normalizeCategory(json.primary_category, allowedCategories),
+                secondary_categories: uniqueList(normalizeStringArray(json.secondary_categories)).slice(0, 6),
+                module: cleanText(json.module || dossier.component || dossier.product || "未识别模块"),
+                rat: normalizeStringArray(json.rat || []),
+                risk_level: normalizeRiskLevel(json.risk_level, closureType),
+                confidence: normalizeNumber(json.confidence, 0.66),
+                one_sentence_conclusion: oneSentenceConclusion || summarizeText(dossier.summary || "未生成一句话结论", 120),
+                why_closed: cleanText(json.why_closed || ""),
+                is_tester_misunderstanding: normalizeBoolean(json.is_tester_misunderstanding, false),
+                is_environment_issue: normalizeBoolean(json.is_environment_issue, false),
+                is_log_insufficient: normalizeBoolean(json.is_log_insufficient, false),
+                is_product_limitation: normalizeBoolean(json.is_product_limitation, false),
+                is_future_improvement: normalizeBoolean(json.is_future_improvement, futureBacklog.should_create),
+                test_team_learning: learningSection,
+                testcase_improvement: testcaseImprovement,
+                log_evidence_improvement: logImprovement,
+                future_project_backlog: futureBacklog,
+                knowledge_base_entry: knowledgeBaseEntry,
+                action_items: actionItems
+            };
+
+            if (!normalized.bug_id) {
+                throw new Error("LLM 输出缺少 bug_id。");
+            }
+            if (!normalized.primary_category) {
+                throw new Error("LLM 输出缺少 primary_category。");
+            }
+            if (!normalized.one_sentence_conclusion) {
+                throw new Error("LLM 输出缺少 one_sentence_conclusion。");
+            }
+            if (!normalized.knowledge_base_entry.title || !normalized.knowledge_base_entry.content) {
+                throw new Error("LLM 输出缺少知识库条目关键信息。");
+            }
+
+            return normalized;
+        }
+
+        async function tryFetchJson(url, options = {}) {
+            const {
+                apiKey = "",
+                authQueryKey = "",
+                useAuthHeader = false,
+                credentials = "omit"
+            } = options;
+
+            const targetUrl = new URL(url);
+            if (apiKey && authQueryKey) {
+                targetUrl.searchParams.set(authQueryKey, apiKey);
+            }
+
+            const headers = {
+                Accept: "application/json"
+            };
+            if (apiKey && useAuthHeader) {
+                headers["X-BUGZILLA-API-KEY"] = apiKey;
+            }
+
+            const response = await fetch(targetUrl.toString(), {
+                method: "GET",
+                credentials,
+                headers
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            return response.json();
+        }
+
+        async function fetchBugzillaRestResource(resourcePath) {
+            const apiBase = normalizeBugzillaApiBase(appState.config.bugzillaApiBase);
+            const apiKey = appState.config.bugzillaApiKey;
+
+            if (!apiBase) {
+                throw new Error("请填写 Bugzilla API Base。");
+            }
+
+            const resourceUrl = joinUrl(apiBase, resourcePath);
+            const attempts = [];
+
+            if (apiKey) {
+                attempts.push({
+                    label: `${resourceUrl} (api_key 参数)`,
+                    requestUrl: resourceUrl,
+                    requestOptions: { apiKey, authQueryKey: "api_key", credentials: "omit" }
+                });
+                attempts.push({
+                    label: `${resourceUrl} (Bugzilla_api_key 参数)`,
+                    requestUrl: resourceUrl,
+                    requestOptions: { apiKey, authQueryKey: "Bugzilla_api_key", credentials: "omit" }
+                });
+                attempts.push({
+                    label: `${resourceUrl} (X-BUGZILLA-API-KEY 请求头)`,
+                    requestUrl: resourceUrl,
+                    requestOptions: { apiKey, useAuthHeader: true, credentials: "omit" }
+                });
+            } else {
+                attempts.push({
+                    label: `${resourceUrl} (无 API Key，尝试默认权限)`,
+                    requestUrl: resourceUrl,
+                    requestOptions: { credentials: "include" }
+                });
+            }
+
+            const errors = [];
+            for (const attempt of attempts) {
+                try {
+                    return await tryFetchJson(attempt.requestUrl, attempt.requestOptions);
+                } catch (error) {
+                    errors.push(`${attempt.label}: ${error.message}`);
+                }
+            }
+
+            throw new Error(errors.join("；"));
+        }
+
+        async function fetchBugById(bugId) {
+            return fetchBugzillaRestResource(`bug/${encodeURIComponent(bugId)}`);
+        }
+
+        async function fetchBugComments(bugId) {
+            return fetchBugzillaRestResource(`bug/${encodeURIComponent(bugId)}/comment`);
+        }
+
+        async function fetchBugAttachments(bugId) {
+            return fetchBugzillaRestResource(`bug/${encodeURIComponent(bugId)}/attachment`);
+        }
+
+        function buildGeminiEndpoint(rawEndpoint, apiKey) {
+            const trimmed = String(rawEndpoint || "").trim();
+            if (!trimmed) {
+                throw new Error("请填写 LLM API Endpoint。");
+            }
+
+            const url = new URL(trimmed.includes(":generateContent") ? trimmed : `${trimmed.replace(/\/$/, "")}:generateContent`);
+            if (apiKey && !url.searchParams.get("key")) {
+                url.searchParams.set("key", apiKey);
+            }
+            return url.toString();
+        }
+
+        function buildDifyPrompt(messages, systemPrompt = "") {
+            const sections = [];
+
+            if (systemPrompt) {
+                sections.push(`【System Instruction】\n${systemPrompt}`);
+            }
+
+            if (messages?.length) {
+                const conversationText = messages
+                    .map((message) => {
+                        const roleLabel = message.role === "assistant" ? "Assistant" : "User";
+                        return `${roleLabel}:\n${message.content}`;
+                    })
+                    .join("\n\n");
+                sections.push(`【Conversation】\n${conversationText}`);
+            }
+
+            sections.push("【Output Requirement】\n请直接返回最终结果文本，不要输出 Markdown 代码块。");
+            return sections.join("\n\n");
+        }
+
+        function extractOpenAiText(rawContent) {
+            if (typeof rawContent === "string") return rawContent;
+            if (Array.isArray(rawContent)) {
+                return rawContent
+                    .map((item) => {
+                        if (typeof item === "string") return item;
+                        if (item?.type === "text") return item.text;
+                        return "";
+                    })
+                    .join("\n");
+            }
+            return "";
+        }
+
+        async function callModelAPI({ messages, systemPrompt = "", temperature = 0.15, maxTokens = 2600 }) {
+            const { llmProvider, llmEndpoint, llmApiKey, modelName } = appState.config;
+
+            if (!llmEndpoint || !llmApiKey) {
+                throw new Error("LLM Endpoint 和 API Key 不能为空。");
+            }
+
+            let endpoint = llmEndpoint.trim();
+            let payload = null;
+            const headers = {
+                "Content-Type": "application/json"
+            };
+
+            if (llmProvider === "gemini") {
+                endpoint = buildGeminiEndpoint(endpoint, llmApiKey);
+                payload = {
+                    contents: messages.map((message) => ({
+                        role: message.role === "assistant" ? "model" : "user",
+                        parts: [{ text: message.content }]
+                    })),
+                    generationConfig: {
+                        temperature,
+                        maxOutputTokens: maxTokens,
+                        responseMimeType: "application/json"
+                    },
+                    systemInstruction: systemPrompt
+                        ? { parts: [{ text: systemPrompt }] }
+                        : undefined
+                };
+            } else if (llmProvider === "dify") {
+                headers.Authorization = `Bearer ${llmApiKey}`;
+                payload = {
+                    inputs: {
+                        query: buildDifyPrompt(messages, systemPrompt)
+                    },
+                    query: buildDifyPrompt(messages, systemPrompt),
+                    response_mode: "blocking",
+                    user: "codex-bug-review"
+                };
+            } else {
+                headers.Authorization = `Bearer ${llmApiKey}`;
+                payload = {
+                    model: modelName || "gpt-4.1-mini",
+                    messages: [
+                        ...(systemPrompt ? [{ role: "system", content: systemPrompt }] : []),
+                        ...messages
+                    ],
+                    temperature,
+                    max_tokens: maxTokens
+                };
+                if (llmProvider === "openai") {
+                    payload.response_format = { type: "json_object" };
+                }
+            }
+
+            const response = await fetch(endpoint, {
+                method: "POST",
+                headers,
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                let errorDetails = response.statusText;
+                const contentType = response.headers.get("content-type") || "";
+                if (contentType.includes("application/json")) {
+                    try {
+                        const errorBody = await response.json();
+                        errorDetails = errorBody.error?.message || JSON.stringify(errorBody);
+                    } catch (error) {
+                        errorDetails = "无法解析 JSON 错误响应。";
+                    }
+                } else {
+                    try {
+                        errorDetails = await response.text();
+                    } catch (error) {
+                        errorDetails = "无法读取错误响应体。";
+                    }
+                }
+                throw new Error(`模型 API 调用失败，状态码 ${response.status}：${errorDetails}`);
+            }
+
+            const result = await response.json();
+
+            if (llmProvider === "gemini") {
+                const rawText = result.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("\n").trim();
+                if (!rawText) {
+                    throw new Error("Gemini 返回内容为空。");
+                }
+                return rawText;
+            }
+
+            if (llmProvider === "dify") {
+                const rawText = cleanText(
+                    result.answer
+                    || result.data?.answer
+                    || result.outputs?.answer
+                    || result.outputs?.text
+                    || ""
+                );
+                if (!rawText) {
+                    throw new Error("Dify 返回内容为空。");
+                }
+                return rawText;
+            }
+
+            const rawContent = result.choices?.[0]?.message?.content;
+            const text = extractOpenAiText(rawContent).trim();
+            if (!text) {
+                throw new Error("OpenAI-compatible 返回内容为空。");
+            }
+            return text;
+        }
+
+        async function analyzeSingleBugWithLLM(dossier) {
+            const compactDossier = compactBugDossierForLLM(dossier);
+            const scopeText = appState.config.analysisScopes.length
+                ? appState.config.analysisScopes.join("、")
+                : "WONTFIX / NON-PREPRODUCE 改进分析";
+
+            const systemPrompt = `你是一名资深通信终端系统测试质量负责人，熟悉 Bugzilla 缺陷分析、WONTFIX / NON-PREPRODUCE 关闭原因复盘、蜂窝终端测试、RRC/NAS/IMS/PLMN/DATA/Voice/SMS 等模块。
+你的任务不是判断测试人员是否“犯错”，而是把一个 WONTFIX 或 NON-PREPRODUCE bug 转化为测试团队可复用的经验资产。
+
+你必须完成：
+1. 判断该 bug 的关闭类型；
+2. 对 WONTFIX 或 NON-PREPRODUCE 做细分分类；
+3. 判断是否属于测试理解偏差、环境问题、log 不足、产品实现限制、后续项目优化项；
+4. 提炼测试团队经验；
+5. 生成知识库条目；
+6. 给出测试用例改进建议；
+7. 给出 log / 证据链改进建议；
+8. 判断是否需要进入后续项目优化池；
+9. 输出 action items。
+
+只允许输出合法 JSON，不允许输出 Markdown，不允许输出解释文字。`;
+
+            const basePrompt = `请分析以下 Bugzilla bug。
+
+【分析目标】
+将该 bug 转化为测试团队改进资产，而不是简单判断是否为无价值 bug。
+
+【分析范围】
+${scopeText}
+
+【Bug Dossier】
+${JSON.stringify(compactDossier, null, 2)}
+
+【WONTFIX 分类候选】
+- 产品设计如此
+- 协议/规范允许
+- 当前实现限制
+- 性能边界限制
+- 项目优先级低
+- 外部网络/运营商问题
+- 实验室环境/配置问题
+- 测试理解偏差
+- 已知问题重复变体
+- 客户/项目策略不修
+- 信息不足无法判断
+
+【NON-PREPRODUCE 分类候选】
+- 偶现但现象可信
+- 偶现且 log 不足
+- 网络环境瞬态问题
+- 实验室环境不稳定
+- 测试步骤不完整
+- 复现路径不稳定
+- 设备一次性异常
+- 版本切换后消失
+- 疑似重复但未合并
+- 测试观察误差
+- 信息不足无法判断
+
+【risk_level 约束】
+- 若 closure_type = WONTFIX，则 risk_level 仅允许 High / Medium / Low
+- 若 closure_type = NON-PREPRODUCE，则 risk_level 仅允许以下之一：
+  - NPR-L1 高风险偶现
+  - NPR-L2 中风险偶现
+  - NPR-L3 低风险偶现
+  - NPR-L4 明确误报
+
+【输出 Schema】
+{
+  "bug_id": "string",
+  "closure_type": "WONTFIX | NON-PREPRODUCE",
+  "primary_category": "必须从候选中选择",
+  "secondary_categories": ["string"],
+  "module": "string",
+  "rat": ["string"],
+  "risk_level": "string",
+  "confidence": 0.82,
+  "one_sentence_conclusion": "string",
+  "why_closed": "string",
+  "is_tester_misunderstanding": true,
+  "is_environment_issue": false,
+  "is_log_insufficient": false,
+  "is_product_limitation": false,
+  "is_future_improvement": true,
+  "test_team_learning": {
+    "lesson_title": "string",
+    "lesson_detail": "string",
+    "applicable_scenarios": ["string"],
+    "anti_pattern": "string"
+  },
+  "testcase_improvement": {
+    "need_update": true,
+    "suggested_change": "string",
+    "new_test_points": ["string"]
+  },
+  "log_evidence_improvement": {
+    "need_update": true,
+    "missing_evidence": ["string"],
+    "required_logs": ["string"],
+    "trigger_snapshot": ["string"]
+  },
+  "future_project_backlog": {
+    "should_create": true,
+    "title": "string",
+    "reason": "string",
+    "priority": "P1 | P2 | P3"
+  },
+  "knowledge_base_entry": {
+    "type": "测试经验 | 需求澄清 | 环境风险 | log 规范 | 测试策略",
+    "title": "string",
+    "content": "string",
+    "tags": ["string"]
+  },
+  "action_items": [
+    {
+      "type": "string",
+      "owner": "string",
+      "action": "string"
+    }
+  ]
+}
+
+【补充要求】
+- bug_id 必须与输入 bug 一致。
+- one_sentence_conclusion 必须是一句话。
+- 必须区分 WONTFIX 和 NON-PREPRODUCE，不要混淆。
+- 如果判断是测试理解偏差，要尽量转化为培训项和用例预期修正建议。
+- 如果判断是外部环境或实验室问题，要在 log_evidence_improvement 或 knowledge_base_entry 中沉淀判别方法。
+- 如果判断是产品限制或未来体验优化点，要给出 future_project_backlog。
+- 只输出 JSON。`;
+
+            async function requestAnalysis(extraInstruction = "") {
+                return callModelAPI({
+                    systemPrompt,
+                    messages: [{ role: "user", content: `${basePrompt}${extraInstruction}` }],
+                    temperature: 0.1,
+                    maxTokens: 3200
+                });
+            }
+
+            async function requestJsonRepair(invalidOutput, failureMessage) {
+                const repairSystemPrompt = `你是一个 JSON 修复器。你的唯一任务是把已有输出修复成合法 JSON。
+不要补充解释，不要输出 Markdown，不要输出代码块，只输出一个合法 JSON 对象。`;
+
+                const repairPrompt = `下面这段内容原本应该是单 bug 结构化分析 JSON，但当前不合法。
+
+【当前解析错误】
+${failureMessage}
+
+【目标 bug_id】
+${dossier.bug_id}
+
+【合法输出要求】
+- 必须输出一个 JSON 对象
+- bug_id 必须保持为 ${dossier.bug_id}
+- closure_type 只能是 WONTFIX 或 NON-PREPRODUCE
+- 不要添加解释文字
+- 不要改写明显已经存在的信息，只修复格式和局部不合法字段
+
+【待修复原文】
+${String(invalidOutput || "").slice(0, 12000)}`;
+
+                return callModelAPI({
+                    systemPrompt: repairSystemPrompt,
+                    messages: [{ role: "user", content: repairPrompt }],
+                    temperature: 0,
+                    maxTokens: 3200
+                });
+            }
+
+            let rawText = await requestAnalysis();
+
+            try {
+                return validateSingleBugAnalysisJson(extractJsonCandidate(rawText), dossier);
+            } catch (firstError) {
+                const retryInstruction = `
+
+上一次输出未通过前端 JSON 校验，原因可能包括：
+- 不是纯 JSON
+- bug_id 缺失或 closure_type 不合法
+- primary_category 不在候选字典内
+- 知识库条目缺失标题或正文
+- 中间夹带了自然语言或不规范标点
+
+请重新输出一次合法 JSON，不要解释。
+
+【上一次失败原因】
+${firstError.message}
+
+【上一轮原始输出】
+${rawText.slice(0, 6000)}`;
+
+                rawText = await requestAnalysis(retryInstruction);
+
+                try {
+                    return validateSingleBugAnalysisJson(extractJsonCandidate(rawText), dossier);
+                } catch (secondError) {
+                    const repairedText = await requestJsonRepair(rawText, secondError.message);
+                    return validateSingleBugAnalysisJson(extractJsonCandidate(repairedText), dossier);
+                }
+            }
+        }
+
+        function groupBy(items, keyBuilder) {
+            return items.reduce((accumulator, item) => {
+                const key = keyBuilder(item);
+                if (!accumulator[key]) accumulator[key] = [];
+                accumulator[key].push(item);
+                return accumulator;
+            }, {});
+        }
+
+        function buildConclusionRows(analyses) {
+            return analyses.map((analysis) => ({
+                bug_id: analysis.bug_id,
+                closure_type: analysis.closure_type,
+                primary_category: analysis.primary_category,
+                risk_level: analysis.risk_level,
+                one_sentence_conclusion: analysis.one_sentence_conclusion,
+                suggested_actions: uniqueList((analysis.action_items || []).map((item) => item.action)).slice(0, 3)
+            }));
+        }
+
+        function buildMergedKnowledgeBaseEntries(analyses) {
+            const entryMap = {};
+
+            analyses.forEach((analysis) => {
+                const entry = analysis.knowledge_base_entry;
+                if (!entry?.title || !entry?.content) return;
+
+                const key = normalizeFieldLookupKey(entry.title);
+                if (!entryMap[key]) {
+                    entryMap[key] = {
+                        type: entry.type || "测试经验",
+                        title: entry.title,
+                        module: analysis.module || "未识别模块",
+                        modules: uniqueList([analysis.module]),
+                        content: entry.content,
+                        anti_pattern: analysis.test_team_learning?.anti_pattern || "",
+                        tags: uniqueList(entry.tags || []),
+                        source_bug_ids: [analysis.bug_id]
+                    };
+                    return;
+                }
+
+                entryMap[key].modules = uniqueList([...entryMap[key].modules, analysis.module]);
+                entryMap[key].tags = uniqueList([...entryMap[key].tags, ...(entry.tags || [])]);
+                entryMap[key].source_bug_ids = uniqueList([...entryMap[key].source_bug_ids, analysis.bug_id]);
+                if (!entryMap[key].anti_pattern && analysis.test_team_learning?.anti_pattern) {
+                    entryMap[key].anti_pattern = analysis.test_team_learning.anti_pattern;
+                }
+            });
+
+            return Object.values(entryMap).sort((a, b) => b.source_bug_ids.length - a.source_bug_ids.length);
+        }
+
+        function buildTestcaseImprovements(analyses) {
+            const rows = {};
+
+            analyses.forEach((analysis) => {
+                const testcase = analysis.testcase_improvement;
+                if (!testcase?.need_update) return;
+                const key = normalizeFieldLookupKey(`${analysis.module}-${testcase.suggested_change || testcase.new_test_points?.[0] || analysis.primary_category}`);
+                if (!rows[key]) {
+                    rows[key] = {
+                        module: analysis.module || "未识别模块",
+                        suggested_change: testcase.suggested_change || "补充测试预期说明",
+                        new_test_points: uniqueList(testcase.new_test_points || []),
+                        source_bug_ids: [analysis.bug_id]
+                    };
+                    return;
+                }
+                rows[key].new_test_points = uniqueList([...rows[key].new_test_points, ...(testcase.new_test_points || [])]);
+                rows[key].source_bug_ids = uniqueList([...rows[key].source_bug_ids, analysis.bug_id]);
+            });
+
+            return Object.values(rows).sort((a, b) => b.source_bug_ids.length - a.source_bug_ids.length);
+        }
+
+        function buildLogImprovements(analyses) {
+            const rows = {};
+
+            analyses.forEach((analysis) => {
+                const logImprovement = analysis.log_evidence_improvement;
+                if (!logImprovement?.need_update && !analysis.is_log_insufficient) return;
+                const key = normalizeFieldLookupKey(`${analysis.module}-${logImprovement.required_logs?.join("-") || analysis.primary_category}`);
+                if (!rows[key]) {
+                    rows[key] = {
+                        module: analysis.module || "未识别模块",
+                        scenario: analysis.primary_category,
+                        missing_evidence: uniqueList(logImprovement.missing_evidence || []),
+                        required_logs: uniqueList(logImprovement.required_logs || []),
+                        trigger_snapshot: uniqueList(logImprovement.trigger_snapshot || []),
+                        source_bug_ids: [analysis.bug_id]
+                    };
+                    return;
+                }
+                rows[key].missing_evidence = uniqueList([...rows[key].missing_evidence, ...(logImprovement.missing_evidence || [])]);
+                rows[key].required_logs = uniqueList([...rows[key].required_logs, ...(logImprovement.required_logs || [])]);
+                rows[key].trigger_snapshot = uniqueList([...rows[key].trigger_snapshot, ...(logImprovement.trigger_snapshot || [])]);
+                rows[key].source_bug_ids = uniqueList([...rows[key].source_bug_ids, analysis.bug_id]);
+            });
+
+            return Object.values(rows).sort((a, b) => b.source_bug_ids.length - a.source_bug_ids.length);
+        }
+
+        function buildFutureBacklog(analyses) {
+            const rows = {};
+
+            analyses.forEach((analysis) => {
+                const backlog = analysis.future_project_backlog;
+                if (!backlog?.should_create) return;
+
+                const key = normalizeFieldLookupKey(backlog.title || `${analysis.module}-${analysis.primary_category}`);
+                if (!rows[key]) {
+                    rows[key] = {
+                        title: backlog.title || `${analysis.module} 优化项`,
+                        reason: backlog.reason || analysis.one_sentence_conclusion,
+                        priority: backlog.priority || "P2",
+                        module: analysis.module || "未识别模块",
+                        source_bug_ids: [analysis.bug_id]
+                    };
+                    return;
+                }
+
+                rows[key].source_bug_ids = uniqueList([...rows[key].source_bug_ids, analysis.bug_id]);
+                if (!rows[key].reason && backlog.reason) {
+                    rows[key].reason = backlog.reason;
+                }
+            });
+
+            return Object.values(rows).sort((a, b) => b.source_bug_ids.length - a.source_bug_ids.length);
+        }
+
+        function buildEnvironmentRisks(analyses) {
+            const rows = {};
+
+            analyses.forEach((analysis) => {
+                const isEnvironmentCategory = [
+                    "外部网络/运营商问题",
+                    "实验室环境/配置问题",
+                    "网络环境瞬态问题",
+                    "实验室环境不稳定"
+                ].includes(analysis.primary_category);
+
+                if (!analysis.is_environment_issue && !isEnvironmentCategory) return;
+
+                const key = normalizeFieldLookupKey(`${analysis.module}-${analysis.primary_category}`);
+                if (!rows[key]) {
+                    rows[key] = {
+                        scenario: `${analysis.module || "未识别模块"} / ${analysis.primary_category}`,
+                        trigger_signals: uniqueList([
+                            ...((analysis.log_evidence_improvement || {}).trigger_snapshot || []),
+                            ...analysis.rat
+                        ]),
+                        suggestion: analysis.why_closed || analysis.one_sentence_conclusion,
+                        source_bug_ids: [analysis.bug_id]
+                    };
+                    return;
+                }
+
+                rows[key].trigger_signals = uniqueList([...rows[key].trigger_signals, ...(((analysis.log_evidence_improvement || {}).trigger_snapshot) || []), ...analysis.rat]);
+                rows[key].source_bug_ids = uniqueList([...rows[key].source_bug_ids, analysis.bug_id]);
+            });
+
+            return Object.values(rows).sort((a, b) => b.source_bug_ids.length - a.source_bug_ids.length);
+        }
+
+        function buildActionItems(analyses) {
+            const rows = {};
+
+            analyses.forEach((analysis) => {
+                (analysis.action_items || []).forEach((item) => {
+                    const key = normalizeFieldLookupKey(`${item.type}-${item.action}`);
+                    if (!rows[key]) {
+                        rows[key] = {
+                            type: item.type || "行动项",
+                            owner: item.owner || "待指定",
+                            action: item.action,
+                            source_bug_ids: [analysis.bug_id]
+                        };
+                        return;
+                    }
+
+                    rows[key].owner = uniqueList([rows[key].owner, item.owner]).join(" / ");
+                    rows[key].source_bug_ids = uniqueList([...rows[key].source_bug_ids, analysis.bug_id]);
+                });
+            });
+
+            return Object.values(rows).sort((a, b) => b.source_bug_ids.length - a.source_bug_ids.length);
+        }
+
+        function buildTopFindings(analyses, categoryDistribution, moduleDistribution) {
+            const findings = [];
+            const topCategory = categoryDistribution[0];
+            const topModule = moduleDistribution[0];
+            const testerMisunderstandingCount = analyses.filter((analysis) => analysis.is_tester_misunderstanding).length;
+            const logInsufficientCount = analyses.filter((analysis) => analysis.is_log_insufficient).length;
+
+            if (topCategory) {
+                findings.push(`${topCategory.category} 是当前批次最常见的关闭原因，涉及 ${topCategory.count} 个 bug。`);
+            }
+            if (topModule) {
+                findings.push(`${topModule.module} 模块最集中，主要风险集中在 ${topModule.main_risk || "分类仍待进一步收敛"}。`);
+            }
+            if (logInsufficientCount > 0) {
+                findings.push(`有 ${logInsufficientCount} 个 bug 暴露出 log / 证据链不足，说明偶现问题的闭环成本仍然偏高。`);
+            }
+            if (testerMisunderstandingCount > 0) {
+                findings.push(`有 ${testerMisunderstandingCount} 个 bug 被识别为测试理解偏差相关，建议把“设计预期判断条件”前置沉淀成知识库。`);
+            }
+
+            if (!findings.length && analyses.length) {
+                findings.push("本批次 bug 数量较少，但已经具备沉淀成测试经验模板的价值。");
+            }
+
+            return findings.slice(0, 5);
+        }
+
+        function buildRecommendedTeamActions(aggregate) {
+            const actions = [];
+            if (aggregate.summary.testcase_update_count > 0) {
+                actions.push(`优先统一更新 ${aggregate.testcase_improvements.slice(0, 2).map((item) => item.module).filter(Boolean).join(" / ") || "高频模块"} 的测试用例预期与边界说明。`);
+            }
+            if (aggregate.summary.log_improvement_count > 0) {
+                actions.push("建立高频偶现场景的 log checklist，至少覆盖 modem、RRC、NAS、IMS/SIP 与关键时间戳。");
+            }
+            if (aggregate.summary.future_backlog_count > 0) {
+                actions.push(`将 ${aggregate.summary.future_backlog_count} 个未来优化点纳入后续项目池，避免“当前不修”长期停留在经验层面。`);
+            }
+            if (aggregate.summary.knowledge_entries_count > 0) {
+                actions.push("将本批次沉淀出的知识库条目同步进测试培训材料和评审前置 checklist。");
+            }
+
+            aggregate.action_items.slice(0, 2).forEach((item) => {
+                actions.push(`${item.type}：${item.action}`);
+            });
+
+            return uniqueList(actions).slice(0, 6);
+        }
+
+        function aggregateAnalysisResults(resultsByBugId) {
+            const completedAnalyses = Object.values(resultsByBugId || {})
+                .filter((item) => item?.status === "completed" && item.data)
+                .map((item) => item.data);
+
+            const categoryDistribution = Object.values(
+                completedAnalyses.reduce((accumulator, analysis) => {
+                    const key = analysis.primary_category || "信息不足无法判断";
+                    if (!accumulator[key]) {
+                        accumulator[key] = { category: key, count: 0, bug_ids: [] };
+                    }
+                    accumulator[key].count += 1;
+                    accumulator[key].bug_ids.push(analysis.bug_id);
+                    return accumulator;
+                }, {})
+            ).sort((a, b) => b.count - a.count);
+
+            const moduleDistribution = Object.values(
+                completedAnalyses.reduce((accumulator, analysis) => {
+                    const key = analysis.module || "未识别模块";
+                    if (!accumulator[key]) {
+                        accumulator[key] = {
+                            module: key,
+                            count: 0,
+                            categories: []
+                        };
+                    }
+                    accumulator[key].count += 1;
+                    accumulator[key].categories.push(analysis.primary_category || "信息不足无法判断");
+                    return accumulator;
+                }, {})
+            )
+                .map((item) => {
+                    const groupedCategories = groupBy(item.categories, (category) => category);
+                    const sortedCategories = Object.entries(groupedCategories).sort((a, b) => b[1].length - a[1].length);
+                    return {
+                        module: item.module,
+                        count: item.count,
+                        main_risk: sortedCategories[0]?.[0] || "信息不足无法判断"
+                    };
+                })
+                .sort((a, b) => b.count - a.count);
+
+            const knowledgeBaseEntries = buildMergedKnowledgeBaseEntries(completedAnalyses);
+            const testcaseImprovements = buildTestcaseImprovements(completedAnalyses);
+            const logImprovements = buildLogImprovements(completedAnalyses);
+            const futureBacklog = buildFutureBacklog(completedAnalyses);
+            const environmentRisks = buildEnvironmentRisks(completedAnalyses);
+            const actionItems = buildActionItems(completedAnalyses);
+
+            const aggregate = {
+                summary: {
+                    total_bugs: completedAnalyses.length,
+                    wontfix_count: completedAnalyses.filter((analysis) => analysis.closure_type === "WONTFIX").length,
+                    non_reproduce_count: completedAnalyses.filter((analysis) => analysis.closure_type === "NON-PREPRODUCE").length,
+                    high_risk_count: completedAnalyses.filter((analysis) => analysis.risk_level === "High" || analysis.risk_level === "NPR-L1 高风险偶现").length,
+                    knowledge_entries_count: completedAnalyses.filter((analysis) => analysis.knowledge_base_entry?.title && analysis.knowledge_base_entry?.content).length,
+                    future_backlog_count: completedAnalyses.filter((analysis) => analysis.future_project_backlog?.should_create).length,
+                    testcase_update_count: completedAnalyses.filter((analysis) => analysis.testcase_improvement?.need_update).length,
+                    log_improvement_count: completedAnalyses.filter((analysis) => analysis.log_evidence_improvement?.need_update || analysis.is_log_insufficient).length
+                },
+                category_distribution: categoryDistribution,
+                module_distribution: moduleDistribution,
+                top_findings: [],
+                recommended_team_actions: [],
+                conclusion_rows: buildConclusionRows(completedAnalyses),
+                knowledge_base_entries: knowledgeBaseEntries,
+                testcase_improvements: testcaseImprovements,
+                log_improvements: logImprovements,
+                future_backlog: futureBacklog,
+                environment_risks: environmentRisks,
+                action_items: actionItems
+            };
+
+            aggregate.top_findings = buildTopFindings(completedAnalyses, categoryDistribution, moduleDistribution);
+            aggregate.recommended_team_actions = buildRecommendedTeamActions(aggregate);
+
+            return aggregate;
+        }
+
+        function getSelectedAnalysisScopes() {
+            return Array.from(document.querySelectorAll(".analysis-scope:checked")).map((node) => node.value);
+        }
+
+        function getRunStatusText() {
+            if (appState.ui.isFetching) {
+                return `正在抓取 Bug ${appState.ui.currentBugId || "-"} 的基础信息。`;
+            }
+            if (appState.ui.isAnalyzing) {
+                return `正在分析 Bug ${appState.ui.currentBugId || "-"}，等待结构化 JSON 返回。`;
+            }
+            if (appState.aggregateReport) {
+                return `本轮已完成 ${appState.aggregateReport.summary.total_bugs} 个目标 bug 的结构化复盘。`;
+            }
+            return "就绪。输入 Bug ID、配置 Bugzilla 与模型参数后，即可按“抓取基础信息 → 构造 Bug Dossier → 单 bug JSON 分析 → 汇总聚合”完整跑通。";
+        }
+
+        function getFetchStatusLabel(status) {
+            const map = {
+                pending: { text: "待抓取", className: "status-pill status-pending" },
+                running: { text: "抓取中", className: "status-pill status-running" },
+                success: { text: "成功", className: "status-pill status-success" },
+                error: { text: "失败", className: "status-pill status-error" }
+            };
+            return map[status] || map.pending;
+        }
+
+        function getAnalysisStatusLabel(status) {
+            const map = {
+                pending: { text: "待分析", className: "status-pill status-pending" },
+                running: { text: "分析中", className: "status-pill status-running" },
+                completed: { text: "已完成", className: "status-pill status-success" },
+                skipped: { text: "已跳过", className: "status-pill status-warning" },
+                error: { text: "失败", className: "status-pill status-error" }
+            };
+            return map[status] || map.pending;
+        }
+
+        function renderErrorBanners() {
+            const errors = appState.ui.errors || [];
+            if (!errors.length) {
+                refs.errorBannerArea.innerHTML = "";
+                return;
+            }
+
+            refs.errorBannerArea.innerHTML = errors
+                .slice(-4)
+                .map((error) => `<div class="status-banner error">${escapeHtml(error)}</div>`)
+                .join("");
+        }
+
+        function renderFetchStatusTable() {
+            const bugIds = appState.input.bugIds || [];
+            if (!bugIds.length) {
+                refs.fetchStatusContainer.innerHTML = `<div class="empty-box">开始执行后，这里会显示每个 Bug ID 的抓取状态。</div>`;
+                return;
+            }
+
+            const rows = bugIds.map((bugId) => {
+                const result = appState.bugFetchResults[bugId] || { status: "pending" };
+                const statusLabel = getFetchStatusLabel(result.status);
+
+                return `
+                    <tr>
+                        <td class="mono-copy">${escapeHtml(bugId)}</td>
+                        <td><span class="${statusLabel.className}">${escapeHtml(statusLabel.text)}</span></td>
+                        <td>${escapeHtml(result.resolution || "--")}</td>
+                        <td>${escapeHtml(result.component || "--")}</td>
+                        <td>${escapeHtml(result.summary || result.error || "--")}</td>
+                    </tr>
+                `;
+            }).join("");
+
+            refs.fetchStatusContainer.innerHTML = `
+                <div class="table-shell">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Bug ID</th>
+                                <th>抓取状态</th>
+                                <th>Resolution</th>
+                                <th>Component</th>
+                                <th>Summary 摘要</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function renderAnalysisProgressTable() {
+            const bugIds = appState.input.bugIds || [];
+            if (!bugIds.length) {
+                refs.analysisProgressContainer.innerHTML = `<div class="empty-box">开始执行后，这里会显示每个 bug 的单独分析进度和知识库产出状态。</div>`;
+                return;
+            }
+
+            const rows = bugIds.map((bugId) => {
+                const result = appState.bugAnalysisResults[bugId] || { status: "pending" };
+                const statusLabel = getAnalysisStatusLabel(result.status);
+                const data = result.data || null;
+                const category = result.status === "skipped"
+                    ? (result.reason || "非目标关闭类型")
+                    : (data?.primary_category || result.error || "未开始");
+
+                return `
+                    <tr>
+                        <td class="mono-copy">${escapeHtml(bugId)}</td>
+                        <td><span class="${statusLabel.className}">${escapeHtml(statusLabel.text)}</span></td>
+                        <td>${escapeHtml(category)}</td>
+                        <td>${data?.knowledge_base_entry?.title ? "是" : "否"}</td>
+                    </tr>
+                `;
+            }).join("");
+
+            refs.analysisProgressContainer.innerHTML = `
+                <div class="table-shell">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Bug ID</th>
+                                <th>分析状态</th>
+                                <th>分类结果</th>
+                                <th>是否生成知识库</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function getDashboardHtml(report) {
+            if (!report) {
+                return `<div class="empty-box">暂无 Dashboard。完成至少一个目标 bug 的分析后会显示关键统计指标。</div>`;
+            }
+
+            const cards = [
+                { label: "本次分析 Bug 数", value: report.summary.total_bugs, hint: "已完成结构化分析" },
+                { label: "WONTFIX", value: report.summary.wontfix_count, hint: "设计 / 限制 / 策略类" },
+                { label: "NON-PREPRODUCE", value: report.summary.non_reproduce_count, hint: "偶现 / 证据链 / 环境类" },
+                { label: "高风险偶现", value: report.summary.high_risk_count, hint: "需要优先暴露" },
+                { label: "需更新用例", value: report.summary.testcase_update_count, hint: "建议优先落到 case" },
+                { label: "需补强 log", value: report.summary.log_improvement_count, hint: "优先建立 checklist" },
+                { label: "后续项目优化项", value: report.summary.future_backlog_count, hint: "进入 backlog 管理" },
+                { label: "知识库条目", value: report.summary.knowledge_entries_count, hint: "形成经验资产" }
+            ];
+
+            const summaryRows = report.recommended_team_actions.length
+                ? `<ul class="summary-list list-disc pl-5">${report.recommended_team_actions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+                : `<p class="muted-copy">暂无团队级动作。</p>`;
+
+            const findingsRows = report.top_findings.length
+                ? `<ul class="summary-list list-disc pl-5">${report.top_findings.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+                : `<p class="muted-copy">暂无关键发现。</p>`;
+
+            return `
+                <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    ${cards.map((card) => `
+                        <div class="stat-card">
+                            <div class="text-sm font-semibold text-slate-500">${escapeHtml(card.label)}</div>
+                            <div class="mt-3 display-font text-4xl font-extrabold text-slate-900">${escapeHtml(card.value)}</div>
+                            <div class="mt-3 text-sm leading-6 text-slate-600">${escapeHtml(card.hint)}</div>
+                        </div>
+                    `).join("")}
+                </div>
+                <div class="mt-5 grid gap-4 xl:grid-cols-2">
+                    <div class="sub-panel p-4">
+                        <h3 class="display-font text-lg font-extrabold text-slate-900">总体趋势</h3>
+                        <div class="mt-3">${findingsRows}</div>
+                    </div>
+                    <div class="sub-panel p-4">
+                        <h3 class="display-font text-lg font-extrabold text-slate-900">推荐团队动作</h3>
+                        <div class="mt-3">${summaryRows}</div>
+                    </div>
+                </div>
+                <div class="mt-5 grid gap-4 xl:grid-cols-2">
+                    <div class="sub-panel p-4">
+                        <h3 class="display-font text-lg font-extrabold text-slate-900">分类分布</h3>
+                        ${getCategoryDistributionHtml(report)}
+                    </div>
+                    <div class="sub-panel p-4">
+                        <h3 class="display-font text-lg font-extrabold text-slate-900">模块分布</h3>
+                        ${getModuleDistributionHtml(report)}
+                    </div>
+                </div>
+            `;
+        }
+
+        function getCategoryDistributionHtml(report) {
+            if (!report?.category_distribution?.length) {
+                return `<p class="muted-copy mt-3">暂无分类分布。</p>`;
+            }
+
+            const rows = report.category_distribution
+                .slice(0, 8)
+                .map((item) => `
+                    <tr>
+                        <td>${escapeHtml(item.category)}</td>
+                        <td>${escapeHtml(item.count)}</td>
+                        <td class="mono-copy">${escapeHtml(item.bug_ids.join(", "))}</td>
+                    </tr>
+                `)
+                .join("");
+
+            return `
+                <div class="table-shell mt-3">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>分类</th>
+                                <th>数量</th>
+                                <th>代表 Bug</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function getModuleDistributionHtml(report) {
+            if (!report?.module_distribution?.length) {
+                return `<p class="muted-copy mt-3">暂无模块分布。</p>`;
+            }
+
+            const rows = report.module_distribution
+                .slice(0, 8)
+                .map((item) => `
+                    <tr>
+                        <td>${escapeHtml(item.module)}</td>
+                        <td>${escapeHtml(item.count)}</td>
+                        <td>${escapeHtml(item.main_risk)}</td>
+                    </tr>
+                `)
+                .join("");
+
+            return `
+                <div class="table-shell mt-3">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>模块</th>
+                                <th>数量</th>
+                                <th>主要风险</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function renderDashboard() {
+            const panel = document.getElementById("tab-panel-dashboard");
+            if (panel) {
+                panel.innerHTML = getDashboardHtml(appState.aggregateReport);
+            }
+        }
+
+        function getBugConclusionTableHtml(report) {
+            if (!report?.conclusion_rows?.length) {
+                return `<div class="empty-box">暂无 Bug 级别结论表。</div>`;
+            }
+
+            const rows = report.conclusion_rows.map((item) => `
+                <tr>
+                    <td class="mono-copy">${escapeHtml(item.bug_id)}</td>
+                    <td>${escapeHtml(item.closure_type)}</td>
+                    <td>${escapeHtml(item.primary_category)}</td>
+                    <td>${escapeHtml(item.risk_level)}</td>
+                    <td>${escapeHtml(item.one_sentence_conclusion)}</td>
+                    <td>${escapeHtml(item.suggested_actions.join("；") || "-")}</td>
+                </tr>
+            `).join("");
+
+            return `
+                <div class="table-shell">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Bug ID</th>
+                                <th>Closure</th>
+                                <th>主分类</th>
+                                <th>风险</th>
+                                <th>一句话结论</th>
+                                <th>建议动作</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function renderBugConclusionTable() {
+            const panel = document.getElementById("tab-panel-conclusion");
+            if (panel) {
+                panel.innerHTML = getBugConclusionTableHtml(appState.aggregateReport);
+            }
+        }
+
+        function getKnowledgeBaseCardsHtml(report) {
+            if (!report?.knowledge_base_entries?.length) {
+                return `<div class="empty-box">暂无知识库沉淀条目。</div>`;
+            }
+
+            return `
+                <div class="grid gap-4 lg:grid-cols-2">
+                    ${report.knowledge_base_entries.map((entry) => `
+                        <article class="kb-card">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="accent-chip">${escapeHtml(entry.type || "测试经验")}</span>
+                                <span class="neutral-chip">${escapeHtml(entry.modules.join(" / ") || entry.module || "未识别模块")}</span>
+                            </div>
+                            <h3 class="display-font mt-4 text-xl font-extrabold text-slate-900">${escapeHtml(entry.title)}</h3>
+                            <p class="mt-3 text-sm leading-7 text-slate-700">${escapeHtml(entry.content)}</p>
+                            ${entry.anti_pattern ? `<p class="mt-3 text-sm leading-7 text-slate-600"><strong>反模式：</strong>${escapeHtml(entry.anti_pattern)}</p>` : ""}
+                            <div class="mt-4 flex flex-wrap gap-2">
+                                ${entry.tags.map((tag) => `<span class="soft-chip">${escapeHtml(tag)}</span>`).join("")}
+                            </div>
+                            <div class="mt-4 text-sm font-semibold text-slate-600">关联 Bug：<span class="mono-copy">${escapeHtml(entry.source_bug_ids.join(", "))}</span></div>
+                        </article>
+                    `).join("")}
+                </div>
+            `;
+        }
+
+        function renderKnowledgeBaseCards() {
+            const panel = document.getElementById("tab-panel-kb");
+            if (panel) {
+                panel.innerHTML = getKnowledgeBaseCardsHtml(appState.aggregateReport);
+            }
+        }
+
+        function getTestcaseImprovementTableHtml(report) {
+            if (!report?.testcase_improvements?.length) {
+                return `<div class="empty-box">暂无用例改进建议。</div>`;
+            }
+
+            const rows = report.testcase_improvements.map((item) => `
+                <tr>
+                    <td>${escapeHtml(item.module)}</td>
+                    <td>${escapeHtml(item.suggested_change)}</td>
+                    <td>${escapeHtml(item.new_test_points.join("；") || "-")}</td>
+                    <td class="mono-copy">${escapeHtml(item.source_bug_ids.join(", "))}</td>
+                </tr>
+            `).join("");
+
+            return `
+                <div class="table-shell">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>模块</th>
+                                <th>需要补强的测试点</th>
+                                <th>新增 test points</th>
+                                <th>来源 Bug</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function renderTestcaseImprovementTable() {
+            const panel = document.getElementById("tab-panel-testcase");
+            if (panel) {
+                panel.innerHTML = getTestcaseImprovementTableHtml(appState.aggregateReport);
+            }
+        }
+
+        function getLogImprovementTableHtml(report) {
+            if (!report?.log_improvements?.length) {
+                return `<div class="empty-box">暂无 Log / 证据链改进建议。</div>`;
+            }
+
+            const rows = report.log_improvements.map((item) => `
+                <tr>
+                    <td>${escapeHtml(`${item.module} / ${item.scenario}`)}</td>
+                    <td>${escapeHtml(item.required_logs.join("；") || "-")}</td>
+                    <td>${escapeHtml(item.missing_evidence.join("；") || "-")}</td>
+                    <td>${escapeHtml(item.trigger_snapshot.join("；") || "-")}</td>
+                    <td class="mono-copy">${escapeHtml(item.source_bug_ids.join(", "))}</td>
+                </tr>
+            `).join("");
+
+            return `
+                <div class="table-shell">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>场景</th>
+                                <th>必备日志</th>
+                                <th>缺失证据</th>
+                                <th>触发快照</th>
+                                <th>来源 Bug</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function renderLogImprovementTable() {
+            const panel = document.getElementById("tab-panel-log");
+            if (panel) {
+                panel.innerHTML = getLogImprovementTableHtml(appState.aggregateReport);
+            }
+        }
+
+        function getFutureBacklogTableHtml(report) {
+            if (!report?.future_backlog?.length) {
+                return `<div class="empty-box">暂无后续项目优化池条目。</div>`;
+            }
+
+            const rows = report.future_backlog.map((item) => `
+                <tr>
+                    <td>${escapeHtml(item.title)}</td>
+                    <td>${escapeHtml(item.reason)}</td>
+                    <td>${escapeHtml(item.priority)}</td>
+                    <td class="mono-copy">${escapeHtml(item.source_bug_ids.join(", "))}</td>
+                </tr>
+            `).join("");
+
+            return `
+                <div class="table-shell">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>优化项</th>
+                                <th>原因</th>
+                                <th>优先级</th>
+                                <th>来源 Bug</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function renderFutureBacklogTable() {
+            const panel = document.getElementById("tab-panel-backlog");
+            if (panel) {
+                panel.innerHTML = getFutureBacklogTableHtml(appState.aggregateReport);
+            }
+        }
+
+        function getEnvironmentRiskTableHtml(report) {
+            if (!report?.environment_risks?.length) {
+                return `<div class="empty-box">暂无环境与网络风险库内容。</div>`;
+            }
+
+            const rows = report.environment_risks.map((item) => `
+                <tr>
+                    <td>${escapeHtml(item.scenario)}</td>
+                    <td>${escapeHtml(item.trigger_signals.join("；") || "-")}</td>
+                    <td>${escapeHtml(item.suggestion)}</td>
+                    <td class="mono-copy">${escapeHtml(item.source_bug_ids.join(", "))}</td>
+                </tr>
+            `).join("");
+
+            return `
+                <div class="table-shell">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>风险场景</th>
+                                <th>触发线索</th>
+                                <th>影响 / 建议</th>
+                                <th>来源 Bug</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function getActionItemsTableHtml(report) {
+            if (!report?.action_items?.length) {
+                return `<div class="empty-box">暂无 Action Items。</div>`;
+            }
+
+            const rows = report.action_items.map((item) => `
+                <tr>
+                    <td>${escapeHtml(item.type)}</td>
+                    <td>${escapeHtml(item.owner)}</td>
+                    <td>${escapeHtml(item.action)}</td>
+                    <td class="mono-copy">${escapeHtml(item.source_bug_ids.join(", "))}</td>
+                </tr>
+            `).join("");
+
+            return `
+                <div class="table-shell">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>类型</th>
+                                <th>Owner</th>
+                                <th>行动项</th>
+                                <th>来源 Bug</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function renderSummaryWorkspace() {
+            if (!appState.aggregateReport) {
+                refs.summaryRoot.innerHTML = `
+                    <div class="empty-box">
+                        批量分析完成后，这里会生成 Dashboard、Bug 结论表、知识库沉淀、用例改进、Log 改进、后续项目优化池、环境风险库和 Action Items。
+                    </div>
+                `;
+                toggleDownloadButtons(false);
+                return;
+            }
+
+            refs.summaryRoot.innerHTML = `
+                <div class="flex flex-wrap gap-2">
+                    <button class="tab-btn active" type="button" data-tab-target="dashboard">总览 Dashboard</button>
+                    <button class="tab-btn" type="button" data-tab-target="conclusion">Bug 分类结果</button>
+                    <button class="tab-btn" type="button" data-tab-target="kb">测试经验知识库</button>
+                    <button class="tab-btn" type="button" data-tab-target="testcase">用例改进建议</button>
+                    <button class="tab-btn" type="button" data-tab-target="log">Log / 证据链改进</button>
+                    <button class="tab-btn" type="button" data-tab-target="backlog">后续项目优化池</button>
+                    <button class="tab-btn" type="button" data-tab-target="risk">环境与网络风险库</button>
+                    <button class="tab-btn" type="button" data-tab-target="action">Action Items</button>
+                </div>
+                <div class="mt-5 space-y-4">
+                    <div id="tab-panel-dashboard" class="tab-panel active"></div>
+                    <div id="tab-panel-conclusion" class="tab-panel"></div>
+                    <div id="tab-panel-kb" class="tab-panel"></div>
+                    <div id="tab-panel-testcase" class="tab-panel"></div>
+                    <div id="tab-panel-log" class="tab-panel"></div>
+                    <div id="tab-panel-backlog" class="tab-panel"></div>
+                    <div id="tab-panel-risk" class="tab-panel"></div>
+                    <div id="tab-panel-action" class="tab-panel"></div>
+                </div>
+            `;
+
+            refs.summaryRoot.querySelectorAll("[data-tab-target]").forEach((button) => {
+                button.addEventListener("click", () => setActiveTab(button.dataset.tabTarget));
+            });
+
+            renderDashboard();
+            renderBugConclusionTable();
+            renderKnowledgeBaseCards();
+            renderTestcaseImprovementTable();
+            renderLogImprovementTable();
+            renderFutureBacklogTable();
+
+            const riskPanel = document.getElementById("tab-panel-risk");
+            if (riskPanel) {
+                riskPanel.innerHTML = getEnvironmentRiskTableHtml(appState.aggregateReport);
+            }
+
+            const actionPanel = document.getElementById("tab-panel-action");
+            if (actionPanel) {
+                actionPanel.innerHTML = getActionItemsTableHtml(appState.aggregateReport);
+            }
+
+            setActiveTab(appState.ui.activeTab || "dashboard");
+            toggleDownloadButtons(true);
+        }
+
+        function setActiveTab(tabName) {
+            appState.ui.activeTab = tabName;
+            refs.summaryRoot.querySelectorAll("[data-tab-target]").forEach((button) => {
+                button.classList.toggle("active", button.dataset.tabTarget === tabName);
+            });
+            refs.summaryRoot.querySelectorAll(".tab-panel").forEach((panel) => {
+                panel.classList.toggle("active", panel.id === `tab-panel-${tabName}`);
+            });
+        }
+
+        function renderProgressChips() {
+            const bugIds = appState.input.bugIds || [];
+            const total = bugIds.length;
+            const fetchSuccessCount = Object.values(appState.bugFetchResults || {}).filter((item) => item.status === "success").length;
+            const analysisCompleteCount = Object.values(appState.bugAnalysisResults || {}).filter((item) => item.status === "completed").length;
+
+            refs.fetchProgressChip.textContent = `抓取 ${fetchSuccessCount} / ${total}`;
+            refs.analysisProgressChip.textContent = `分析 ${analysisCompleteCount} / ${total}`;
+            refs.currentBugChip.textContent = `当前对象 ${appState.ui.currentBugId || "-"}`;
+            refs.analysisStageHint.textContent = appState.ui.isFetching
+                ? `正在拉取 Bug ${appState.ui.currentBugId || "-"} 的基础信息。`
+                : appState.ui.isAnalyzing
+                    ? `正在分析 Bug ${appState.ui.currentBugId || "-"}。系统会强制校验 JSON，如果格式不合法会自动重试一次。`
+                    : appState.aggregateReport
+                        ? "结构化分析已完成，可切换各个 Tab 查看聚合结果，或直接下载 HTML / JSON / CSV。"
+                        : "当前还没有启动分析。开始执行后，这里会逐条展示“已完成 / 跳过 / 失败”等状态。";
+        }
+
+        function updateRuntimeHint() {
+            refs.runtimeHint.textContent = getRunStatusText();
+            refs.runtimeHint.className = `status-banner ${appState.ui.errors.length ? "warn" : "info"}`;
+        }
+
+        function toggleInputSurface(isLocked) {
+            refs.configSurface.classList.toggle("disabled-surface", isLocked);
+            refs.startAnalysisBtn.disabled = isLocked;
+            refs.resetBtn.disabled = isLocked;
+            refs.loadSampleBtn.disabled = isLocked;
+            refs.runLoader.classList.toggle("hidden", !isLocked);
+        }
+
+        function toggleDownloadButtons(enabled) {
+            refs.downloadHtmlBtn.disabled = !enabled;
+            refs.downloadJsonBtn.disabled = !enabled;
+            refs.downloadCsvBtn.disabled = !enabled;
+        }
+
+        function updateBugIdMeta() {
+            const bugIds = parseBugIds(refs.bugIdsInput.value);
+            refs.bugIdMeta.textContent = `当前识别 ${bugIds.length} 个 ID`;
+        }
+
+        function syncStateFromForm() {
+            appState.config = {
+                bugzillaApiBase: normalizeBugzillaApiBase(refs.bugzillaApiBase.value),
+                bugzillaApiKey: refs.bugzillaApiKey.value.trim(),
+                llmProvider: refs.llmProvider.value,
+                llmEndpoint: refs.llmEndpoint.value.trim(),
+                llmApiKey: refs.llmApiKey.value.trim(),
+                modelName: refs.modelName.value.trim(),
+                analysisScopes: getSelectedAnalysisScopes()
+            };
+            appState.input = {
+                bugIdsRaw: refs.bugIdsInput.value,
+                bugIds: parseBugIds(refs.bugIdsInput.value)
+            };
+        }
+
+        function applyStateToForm(config = {}) {
+            refs.bugzillaApiBase.value = config.bugzillaApiBase || "";
+            refs.llmProvider.value = config.llmProvider || "gemini";
+            refs.llmEndpoint.value = config.llmEndpoint || "";
+            refs.modelName.value = config.modelName || "";
+            updateProviderUi();
+            updateBugIdMeta();
+        }
+
+        function persistConfigSnapshot() {
+            const snapshot = {
+                bugzillaApiBase: refs.bugzillaApiBase.value.trim(),
+                llmProvider: refs.llmProvider.value,
+                llmEndpoint: refs.llmEndpoint.value.trim(),
+                modelName: refs.modelName.value.trim()
+            };
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+        }
+
+        function restoreConfigSnapshot() {
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY);
+                if (!raw) return;
+                const parsed = JSON.parse(raw);
+                applyStateToForm(parsed);
+            } catch (error) {
+                console.warn("restoreConfigSnapshot failed", error);
+            }
+        }
+
+        function updateProviderUi() {
+            const provider = refs.llmProvider.value;
+            refs.modelNameWrapper.classList.toggle("hidden", provider === "gemini" || provider === "dify");
+            if (provider === "gemini") {
+                refs.providerHint.innerHTML = `Gemini 模式下会自动拼接 <span class="mono-copy">:generateContent?key=</span> 并设置 JSON 输出倾向。`;
+                if (!refs.llmEndpoint.value.trim()) {
+                    refs.llmEndpoint.placeholder = "例如 https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-04-17";
+                }
+                return;
+            }
+
+            if (provider === "dify") {
+                refs.providerHint.innerHTML = `Dify 模式按官方 <span class="mono-copy">/completion-messages</span> 接口发送请求，默认使用 <span class="mono-copy">blocking</span> 返回模式；模型在服务端应用中选择，所以这里不需要填写模型名称。`;
+                if (!refs.llmEndpoint.value.trim()) {
+                    refs.llmEndpoint.placeholder = "例如 https://aifoundry.com/v1/completion-messages";
+                }
+                return;
+            }
+
+            if (provider === "openai") {
+                refs.providerHint.innerHTML = `OpenAI-compatible 模式默认使用 <span class="mono-copy">chat/completions</span> 协议，并启用 JSON object response_format。`;
+                if (!refs.llmEndpoint.value.trim()) {
+                    refs.llmEndpoint.placeholder = "例如 https://api.openai.com/v1/chat/completions";
+                }
+                return;
+            }
+
+            refs.providerHint.innerHTML = `Custom 模式默认按 OpenAI-compatible 请求体发起调用，但不强依赖 response_format，适合兼容性较弱的自定义网关。`;
+            if (!refs.llmEndpoint.value.trim()) {
+                refs.llmEndpoint.placeholder = "例如 https://your-gateway.example.com/v1/chat/completions";
+            }
+        }
+
+        function resetRuntimeState() {
+            appState.bugFetchResults = {};
+            appState.bugAnalysisResults = {};
+            appState.aggregateReport = null;
+            appState.ui.isFetching = false;
+            appState.ui.isAnalyzing = false;
+            appState.ui.currentBugId = null;
+            appState.ui.errors = [];
+            appState.ui.activeTab = "dashboard";
+        }
+
+        function registerError(message) {
+            if (!message) return;
+            appState.ui.errors.push(cleanText(message));
+            renderErrorBanners();
+            updateRuntimeHint();
+        }
+
+        function buildConfigSnapshotForExport() {
+            return {
+                bugzillaApiBase: appState.config.bugzillaApiBase,
+                bugzillaApiKeyConfigured: Boolean(appState.config.bugzillaApiKey),
+                llmProvider: appState.config.llmProvider,
+                llmEndpoint: appState.config.llmEndpoint,
+                llmApiKeyConfigured: Boolean(appState.config.llmApiKey),
+                modelName: appState.config.modelName || "",
+                analysisScopes: appState.config.analysisScopes || []
+            };
+        }
+
+        function buildAnalysisExportPayload() {
+            const bugDossiers = {};
+            Object.entries(appState.bugFetchResults || {}).forEach(([bugId, result]) => {
+                if (result?.dossier) {
+                    bugDossiers[bugId] = compactBugDossierForLLM(result.dossier);
+                }
+            });
+
+            const singleBugAnalysisResults = {};
+            Object.entries(appState.bugAnalysisResults || {}).forEach(([bugId, result]) => {
+                singleBugAnalysisResults[bugId] = {
+                    status: result.status,
+                    reason: result.reason || "",
+                    error: result.error || "",
+                    data: result.data || null
+                };
+            });
+
+            return {
+                generated_at: new Date().toISOString(),
+                config_snapshot: buildConfigSnapshotForExport(),
+                bug_ids: appState.input.bugIds || [],
+                bug_fetch_results: Object.fromEntries(
+                    Object.entries(appState.bugFetchResults || {}).map(([bugId, result]) => [
+                        bugId,
+                        {
+                            status: result.status,
+                            resolution: result.resolution || "",
+                            component: result.component || "",
+                            summary: result.summary || "",
+                            error: result.error || ""
+                        }
+                    ])
+                ),
+                bug_dossiers: bugDossiers,
+                single_bug_analysis_results: singleBugAnalysisResults,
+                aggregate_analysis_result: appState.aggregateReport,
+                knowledge_base_entries: appState.aggregateReport?.knowledge_base_entries || [],
+                action_items: appState.aggregateReport?.action_items || []
+            };
+        }
+
+        function buildReportFileTimestamp() {
+            const now = new Date();
+            const parts = [
+                now.getFullYear(),
+                String(now.getMonth() + 1).padStart(2, "0"),
+                String(now.getDate()).padStart(2, "0")
+            ];
+            return parts.join("-");
+        }
+
+        function buildReportShellHtml() {
+            return `
+                <section>
+                    <h1 style="font-size: 32px; margin: 0 0 12px; font-family: Manrope, 'Noto Sans SC', sans-serif;">AI 低转化 Bug 复盘助手</h1>
+                    <p style="margin: 0; color: #617089; line-height: 1.7;">
+                        导出时间：${escapeHtml(new Date().toLocaleString())}<br>
+                        分析范围：${escapeHtml((appState.config.analysisScopes || []).join("、") || "未指定")}
+                    </p>
+                </section>
+                <section style="margin-top: 28px;">
+                    <h2 style="font-size: 22px; margin: 0 0 14px;">配置快照</h2>
+                    <ul style="padding-left: 20px; line-height: 1.8;">
+                        <li>Bugzilla API Base：${escapeHtml(appState.config.bugzillaApiBase || "-")}</li>
+                        <li>LLM Provider：${escapeHtml(appState.config.llmProvider || "-")}</li>
+                        <li>LLM Endpoint：${escapeHtml(appState.config.llmEndpoint || "-")}</li>
+                        <li>Model Name：${escapeHtml(appState.config.modelName || "-")}</li>
+                        <li>Bug IDs：${escapeHtml((appState.input.bugIds || []).join(", ") || "-")}</li>
+                    </ul>
+                </section>
+                <section style="margin-top: 28px;">
+                    <h2 style="font-size: 22px; margin: 0 0 14px;">批量抓取状态</h2>
+                    ${refs.fetchStatusContainer.innerHTML || "<p>暂无</p>"}
+                </section>
+                <section style="margin-top: 28px;">
+                    <h2 style="font-size: 22px; margin: 0 0 14px;">AI 分析进度</h2>
+                    ${refs.analysisProgressContainer.innerHTML || "<p>暂无</p>"}
+                </section>
+                <section style="margin-top: 28px;">
+                    <h2 style="font-size: 22px; margin: 0 0 14px;">总览 Dashboard</h2>
+                    ${getDashboardHtml(appState.aggregateReport)}
+                </section>
+                <section style="margin-top: 28px;">
+                    <h2 style="font-size: 22px; margin: 0 0 14px;">Bug 分类结果</h2>
+                    ${getBugConclusionTableHtml(appState.aggregateReport)}
+                </section>
+                <section style="margin-top: 28px;">
+                    <h2 style="font-size: 22px; margin: 0 0 14px;">测试经验知识库</h2>
+                    ${getKnowledgeBaseCardsHtml(appState.aggregateReport)}
+                </section>
+                <section style="margin-top: 28px;">
+                    <h2 style="font-size: 22px; margin: 0 0 14px;">用例改进建议</h2>
+                    ${getTestcaseImprovementTableHtml(appState.aggregateReport)}
+                </section>
+                <section style="margin-top: 28px;">
+                    <h2 style="font-size: 22px; margin: 0 0 14px;">Log / 证据链改进</h2>
+                    ${getLogImprovementTableHtml(appState.aggregateReport)}
+                </section>
+                <section style="margin-top: 28px;">
+                    <h2 style="font-size: 22px; margin: 0 0 14px;">后续项目优化池</h2>
+                    ${getFutureBacklogTableHtml(appState.aggregateReport)}
+                </section>
+                <section style="margin-top: 28px;">
+                    <h2 style="font-size: 22px; margin: 0 0 14px;">环境与网络风险库</h2>
+                    ${getEnvironmentRiskTableHtml(appState.aggregateReport)}
+                </section>
+                <section style="margin-top: 28px;">
+                    <h2 style="font-size: 22px; margin: 0 0 14px;">Action Items</h2>
+                    ${getActionItemsTableHtml(appState.aggregateReport)}
+                </section>
+            `;
+        }
+
+        function buildDownloadableReportHtml() {
+            return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 低转化 Bug 复盘助手报告</title>
+    <script src="https://cdn.tailwindcss.com"><\/script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            background: #f7f3eb;
+            color: #172033;
+            font-family: "Noto Sans SC", "PingFang SC", sans-serif;
+            line-height: 1.7;
+        }
+        main {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 32px 18px 46px;
+        }
+        .table-shell {
+            overflow: auto;
+            border-radius: 16px;
+            border: 1px solid rgba(23, 32, 51, 0.12);
+            background: rgba(255, 255, 255, 0.95);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th,
+        td {
+            border-bottom: 1px solid rgba(23, 32, 51, 0.08);
+            padding: 12px 14px;
+            text-align: left;
+            vertical-align: top;
+        }
+        th {
+            background: #f0e8da;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .empty-box {
+            border: 1px dashed rgba(23, 32, 51, 0.16);
+            border-radius: 16px;
+            padding: 16px;
+            color: #617089;
+            background: rgba(255, 255, 255, 0.72);
+        }
+        .stat-card {
+            border-radius: 16px;
+            padding: 18px;
+            border: 1px solid rgba(23, 32, 51, 0.1);
+            background: #fffdfa;
+        }
+        .accent-chip,
+        .neutral-chip,
+        .soft-chip,
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+        .accent-chip {
+            background: rgba(187, 106, 63, 0.12);
+            color: #8e4421;
+        }
+        .neutral-chip {
+            background: rgba(23, 32, 51, 0.07);
+            color: #3c485b;
+        }
+        .soft-chip {
+            background: rgba(15, 118, 110, 0.12);
+            color: #0f766e;
+        }
+        .status-pill {
+            background: rgba(23, 32, 51, 0.08);
+            color: #475569;
+        }
+        .kb-card {
+            border-radius: 18px;
+            border: 1px solid rgba(23, 32, 51, 0.1);
+            background: #fffdfa;
+            padding: 18px;
+        }
+        .grid-4 {
+            display: grid;
+            gap: 16px;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        }
+        .grid-2 {
+            display: grid;
+            gap: 16px;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        }
+        .mono-copy {
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        }
+    </style>
+</head>
+<body>
+    <main>${buildReportShellHtml()}</main>
+</body>
+</html>`;
+        }
+
+        function downloadBlob({ content, type, fileName }) {
+            const blob = new Blob([content], { type });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+        }
+
+        function downloadHtmlReport() {
+            if (!appState.aggregateReport) {
+                alert("当前还没有可下载的 HTML 报告。");
+                return;
+            }
+            downloadBlob({
+                content: buildDownloadableReportHtml(),
+                type: "text/html;charset=utf-8",
+                fileName: `bug-analysis-report-${buildReportFileTimestamp()}.html`
+            });
+        }
+
+        function downloadJsonData() {
+            if (!appState.aggregateReport) {
+                alert("当前还没有可下载的 JSON 数据。");
+                return;
+            }
+            downloadBlob({
+                content: JSON.stringify(buildAnalysisExportPayload(), null, 2),
+                type: "application/json;charset=utf-8",
+                fileName: `bug-analysis-result-${buildReportFileTimestamp()}.json`
+            });
+        }
+
+        function escapeCsvCell(value) {
+            const normalized = Array.isArray(value) ? value.join(", ") : String(value ?? "");
+            return `"${normalized.replace(/"/g, '""')}"`;
+        }
+
+        function downloadCsvKnowledgeBase() {
+            if (!appState.aggregateReport?.knowledge_base_entries?.length) {
+                alert("当前没有可导出的知识库条目。");
+                return;
+            }
+
+            const header = ["title", "type", "module", "content", "anti_pattern", "tags", "source_bug_ids"];
+            const rows = appState.aggregateReport.knowledge_base_entries.map((entry) => [
+                entry.title,
+                entry.type,
+                entry.modules.join(" / "),
+                entry.content,
+                entry.anti_pattern,
+                entry.tags.join(" | "),
+                entry.source_bug_ids.join(", ")
+            ]);
+
+            const csv = [header, ...rows]
+                .map((row) => row.map((cell) => escapeCsvCell(cell)).join(","))
+                .join("\n");
+
+            downloadBlob({
+                content: `\uFEFF${csv}`,
+                type: "text/csv;charset=utf-8",
+                fileName: `knowledge-base-${buildReportFileTimestamp()}.csv`
+            });
+        }
+
+        async function runBatchAnalysis() {
+            syncStateFromForm();
+            persistConfigSnapshot();
+
+            if (!appState.input.bugIds.length) {
+                alert("请至少输入一个 Bug ID。");
+                return;
+            }
+            if (!appState.config.analysisScopes.length) {
+                alert("请至少选择一个分析范围。");
+                return;
+            }
+            if (!appState.config.bugzillaApiBase) {
+                alert("请填写 Bugzilla API Base。");
+                return;
+            }
+            if (!appState.config.llmEndpoint || !appState.config.llmApiKey) {
+                alert("请填写 LLM API Endpoint 和 API Key。");
+                return;
+            }
+            if (!["gemini", "dify"].includes(appState.config.llmProvider) && !appState.config.modelName) {
+                alert("OpenAI-compatible / Custom 模式下请填写模型名称。");
+                return;
+            }
+
+            resetRuntimeState();
+            renderErrorBanners();
+            renderFetchStatusTable();
+            renderAnalysisProgressTable();
+            renderSummaryWorkspace();
+            renderProgressChips();
+            updateRuntimeHint();
+            toggleInputSurface(true);
+
+            appState.ui.isFetching = true;
+            renderProgressChips();
+            updateRuntimeHint();
+
+            for (const bugId of appState.input.bugIds) {
+                appState.ui.currentBugId = bugId;
+                appState.bugFetchResults[bugId] = {
+                    status: "running",
+                    resolution: "",
+                    component: "",
+                    summary: "",
+                    error: "",
+                    dossier: null
+                };
+                renderFetchStatusTable();
+                renderProgressChips();
+                updateRuntimeHint();
+
+                try {
+                    const [bugPayload, commentsPayload, attachmentsPayload] = await Promise.all([
+                        fetchBugById(bugId),
+                        fetchBugComments(bugId).catch((error) => {
+                            registerError(`Bug ${bugId} 评论获取失败：${error.message}`);
+                            return { bugs: { [String(bugId)]: { comments: [] } } };
+                        }),
+                        fetchBugAttachments(bugId).catch((error) => {
+                            registerError(`Bug ${bugId} 附件摘要获取失败：${error.message}`);
+                            return null;
+                        })
+                    ]);
+
+                    const dossier = buildBugDossier(bugPayload, commentsPayload, attachmentsPayload);
+
+                    appState.bugFetchResults[bugId] = {
+                        status: "success",
+                        resolution: dossier.resolution || "--",
+                        component: dossier.component || "--",
+                        summary: summarizeText(dossier.summary || dossier.description || "未获取到摘要", 92),
+                        error: "",
+                        dossier
+                    };
+                } catch (error) {
+                    appState.bugFetchResults[bugId] = {
+                        status: "error",
+                        resolution: "--",
+                        component: "--",
+                        summary: summarizeText(error.message, 92),
+                        error: error.message,
+                        dossier: null
+                    };
+                    registerError(`Bug ${bugId} 抓取失败：${error.message}`);
+                }
+
+                renderFetchStatusTable();
+                renderProgressChips();
+            }
+
+            appState.ui.isFetching = false;
+            appState.ui.isAnalyzing = true;
+            renderProgressChips();
+            updateRuntimeHint();
+
+            for (const bugId of appState.input.bugIds) {
+                const fetchResult = appState.bugFetchResults[bugId];
+                if (!fetchResult || fetchResult.status !== "success" || !fetchResult.dossier) {
+                    appState.bugAnalysisResults[bugId] = {
+                        status: "error",
+                        error: "抓取失败，未进入分析。",
+                        data: null
+                    };
+                    renderAnalysisProgressTable();
+                    continue;
+                }
+
+                const closureType = normalizeClosureType(fetchResult.dossier.resolution, fetchResult.dossier.status);
+                if (!isTargetClosureType(closureType)) {
+                    appState.bugAnalysisResults[bugId] = {
+                        status: "skipped",
+                        reason: `非目标关闭类型：${fetchResult.dossier.resolution || fetchResult.dossier.status || "未识别"}`,
+                        data: null
+                    };
+                    renderAnalysisProgressTable();
+                    continue;
+                }
+
+                appState.ui.currentBugId = bugId;
+                appState.bugAnalysisResults[bugId] = {
+                    status: "running",
+                    error: "",
+                    data: null
+                };
+                renderAnalysisProgressTable();
+                renderProgressChips();
+                updateRuntimeHint();
+
+                try {
+                    const analysis = await analyzeSingleBugWithLLM(fetchResult.dossier);
+                    appState.bugAnalysisResults[bugId] = {
+                        status: "completed",
+                        error: "",
+                        data: analysis
+                    };
+                } catch (error) {
+                    appState.bugAnalysisResults[bugId] = {
+                        status: "error",
+                        error: error.message,
+                        data: null
+                    };
+                    registerError(`Bug ${bugId} 分析失败：${error.message}`);
+                }
+
+                renderAnalysisProgressTable();
+                renderProgressChips();
+            }
+
+            appState.ui.isAnalyzing = false;
+            appState.ui.currentBugId = null;
+            appState.aggregateReport = aggregateAnalysisResults(appState.bugAnalysisResults);
+
+            renderAnalysisProgressTable();
+            renderProgressChips();
+            updateRuntimeHint();
+            renderSummaryWorkspace();
+            toggleInputSurface(false);
+        }
+
+        function fillSampleData() {
+            refs.bugIdsInput.value = "12345, 12346, 12347, 12348";
+            if (!refs.bugzillaApiBase.value.trim()) {
+                refs.bugzillaApiBase.value = "https://bugzilla.example.com/rest";
+            }
+            if (!refs.llmEndpoint.value.trim()) {
+                refs.llmEndpoint.value = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-04-17";
+            }
+            updateBugIdMeta();
+            updateProviderUi();
+        }
+
+        function resetAll() {
+            appState = createInitialState();
+            refs.bugIdsInput.value = "";
+            resetRuntimeState();
+            renderErrorBanners();
+            renderFetchStatusTable();
+            renderAnalysisProgressTable();
+            renderSummaryWorkspace();
+            renderProgressChips();
+            updateRuntimeHint();
+            toggleInputSurface(false);
+            updateBugIdMeta();
+        }
+
+        refs.bugIdsInput.addEventListener("input", updateBugIdMeta);
+        refs.llmProvider.addEventListener("change", () => {
+            updateProviderUi();
+            persistConfigSnapshot();
+        });
+        refs.bugzillaApiBase.addEventListener("change", persistConfigSnapshot);
+        refs.bugzillaApiKey.addEventListener("change", persistConfigSnapshot);
+        refs.llmEndpoint.addEventListener("change", persistConfigSnapshot);
+        refs.llmApiKey.addEventListener("change", persistConfigSnapshot);
+        refs.modelName.addEventListener("change", persistConfigSnapshot);
+        refs.startAnalysisBtn.addEventListener("click", runBatchAnalysis);
+        refs.resetBtn.addEventListener("click", resetAll);
+        refs.loadSampleBtn.addEventListener("click", fillSampleData);
+        refs.downloadHtmlBtn.addEventListener("click", downloadHtmlReport);
+        refs.downloadJsonBtn.addEventListener("click", downloadJsonData);
+        refs.downloadCsvBtn.addEventListener("click", downloadCsvKnowledgeBase);
+
+        restoreConfigSnapshot();
+        updateProviderUi();
+        updateBugIdMeta();
+        renderFetchStatusTable();
+        renderAnalysisProgressTable();
+        renderSummaryWorkspace();
+        renderProgressChips();
+        updateRuntimeHint();
+    </script>
+</body>
+</html>
