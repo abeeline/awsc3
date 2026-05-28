@@ -1761,6 +1761,16 @@
             return url.toString();
         }
 
+        function buildDifyEndpoint(rawEndpoint) {
+            const trimmed = String(rawEndpoint || "").trim().replace(/\/$/, "");
+            if (!trimmed) {
+                throw new Error("请填写 Dify API Endpoint。");
+            }
+            return trimmed.endsWith("/completion-messages")
+                ? trimmed
+                : `${trimmed}/completion-messages`;
+        }
+
         function buildDifyPrompt(messages, systemPrompt = "") {
             const sections = [];
 
@@ -1826,12 +1836,12 @@
                         : undefined
                 };
             } else if (llmProvider === "dify") {
+                endpoint = buildDifyEndpoint(endpoint);
                 headers.Authorization = `Bearer ${llmApiKey}`;
+                const difyPrompt = buildDifyPrompt(messages, systemPrompt);
                 payload = {
-                    inputs: {
-                        query: buildDifyPrompt(messages, systemPrompt)
-                    },
-                    query: buildDifyPrompt(messages, systemPrompt),
+                    inputs: {},
+                    query: difyPrompt,
                     response_mode: "blocking",
                     user: "codex-bug-review"
                 };
@@ -1851,11 +1861,19 @@
                 }
             }
 
-            const response = await fetch(endpoint, {
-                method: "POST",
-                headers,
-                body: JSON.stringify(payload)
-            });
+            let response;
+            try {
+                response = await fetch(endpoint, {
+                    method: "POST",
+                    headers,
+                    body: JSON.stringify(payload)
+                });
+            } catch (error) {
+                if (llmProvider === "dify") {
+                    throw new Error(`Dify 请求未发出成功（Failed to fetch）。请优先检查：1. Endpoint 是否为 /completion-messages 或可自动补全到该路径；2. Dify 服务是否允许浏览器跨域访问（CORS）；3. 当前页面是 file:// 打开时，目标服务是否允许该来源；4. 服务是否可直接从当前机器访问。原始错误：${error.message}`);
+                }
+                throw error;
+            }
 
             if (!response.ok) {
                 let errorDetails = response.statusText;
@@ -3113,9 +3131,9 @@ ${rawText.slice(0, 6000)}`;
             }
 
             if (provider === "dify") {
-                refs.providerHint.innerHTML = `Dify 模式按官方 <span class="mono-copy">/completion-messages</span> 接口发送请求，默认使用 <span class="mono-copy">blocking</span> 返回模式；模型在服务端应用中选择，所以这里不需要填写模型名称。`;
+                refs.providerHint.innerHTML = `Dify 模式按官方 <span class="mono-copy">/completion-messages</span> 接口发送请求，默认使用 <span class="mono-copy">blocking</span> 返回模式；模型在服务端应用中选择，所以这里不需要填写模型名称。Endpoint 既可以直接填完整 <span class="mono-copy">.../completion-messages</span>，也可以只填到 <span class="mono-copy">.../v1</span>，页面会自动补全。`;
                 if (!refs.llmEndpoint.value.trim()) {
-                    refs.llmEndpoint.placeholder = "例如 https://aifoundry.com/v1/completion-messages";
+                    refs.llmEndpoint.placeholder = "例如 https://aifoundry.com/v1 或 https://aifoundry.com/v1/completion-messages";
                 }
                 return;
             }
